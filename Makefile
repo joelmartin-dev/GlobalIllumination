@@ -4,9 +4,8 @@ TARGET_EXEC := main
 
 BUILD_DIR := build
 SRC_DIR := src
-DEPS_DIR := deps
-OBJS_DIR := objs
-LIBS_DIR := libs
+OBJ_DIR := obj
+LIB_DIR := lib
 
 CC := clang
 CXX := clang++
@@ -16,17 +15,15 @@ CXX := clang++
 # The find command returns all the files in a directory, including the directory as a prefix
 SRCS := $(shell find $(SRC_DIR) \( -name '*.cpp' -or -name '*.c' \))
 
-# Grab the files in DEPS_DIR without the $(DEPS_DIR) prefix
-DEPS := $(shell find $(DEPS_DIR) \( -name '*.cpp' -or -name '*.c' \) -printf '%P\n')
-
 # Grab the pre-compiled unassembled and unlinked object files
-OBJS := $(shell find $(OBJS_DIR) \( -name '*.o' -or -name '*.d' \))
+OBJS := $(SRCS:%=$(OBJ_DIR)/%.o)
 
 # Grab all the .d files correlated to .o
 MAKES := $(OBJS:.o=.d)
 
 # All the directories that contain files we need access to at compile?linking? time
-INC_DIRS := $(shell find $(SRCS_DIR) -type d) $(shell find $(DEPS_DIR) -type d) include/
+INC_DIRS := $(shell find $(SRC_DIR) -type d) include/
+INC_FLAGS := $(addprefix -I,$(INC_DIRS))
 
 WARNINGS := all error extra
 WARNING_FLAGS := $(addprefix -W,$(WARNINGS))
@@ -48,36 +45,31 @@ CXX_FLAGS := $(CXX_VERSION) $(MODULE_FLAG)
 C_VERSION := -std=c17
 C_FLAGS := $(C_VERSION)
 
-LD_FLAGS := -lglfw -L$(VULKAN_SDK)/lib -lvulkan -lglm
+LD_FLAGS := -L$(LIB_DIR) -lglfw3 -L$(VULKAN_SDK)/lib -lvulkan -lglm
 
 # $@ is target name
 # $^ is all prerequisites
 # $< is the first prerequisite
 # $? is all prerequisites newer than target
 
-# The final build step assembles and links all objects, default target
-# Prerequisites (everything right of :) are either found or built according to existence and recency
-# Makefiles use tabs, not spaces
-$(BUILD_DIR)/$(TARGET_EXEC): $(OBJS) $(MODULES_DIR)/%.pcm
+$(BUILD_DIR)/$(TARGET_EXEC): $(OBJS) $(MODULES_DIR)/$(VULKAN_HPP_MODULE).pcm
+	mkdir -p $(dir $@)
 	$(CXX) $(OBJS) -o $@ $(LD_FLAGS)
 
-# Building C objects
-$(OBJS_DIR)/%.c.o: %.c $(DEPS_DIR)/%.c
+$(OBJ_DIR)/%.c.o: %.c
 	mkdir -p $(dir $@)
-	$(CC) $(CPPFLAGS) $(CFLAGS) -c $< -o $@
+	$(CC) $(CPP_FLAGS) $(C_FLAGS) -c $< -o $@
 
-# Building C++ objects
-$(OBJS_DIR)/%.cpp.o: %.cpp $(DEPS_DIR)/%.cpp
+$(OBJ_DIR)/%.cpp.o: %.cpp
 	mkdir -p $(dir $@)
 	$(CXX) $(CPP_FLAGS) $(CXX_FLAGS) -c $< -o $@
 
 $(MODULES_DIR)/$(VULKAN_HPP_MODULE).pcm: $(VULKAN_SDK)/include/vulkan/vulkan.cppm
-	$(CXX) $(WARNING_FLAGS) $(DEBUG) $(CXX_VERSION) -DVULKAN_HPP_NO_STRUCT_CONSTRUCTORS -I$(VULKAN_SDK)/include --precompile $< -o $@
-
+	$(CXX) $(CXX_VERSION) $(WARNING_FLAGS) -DVULKAN_HPP_NO_STRUCT_CONSTRUCTORS -I$(VULKAN_SDK)/include --precompile $< -o $@
 .PHONY: clean run
 
 clean:
-	rm -r $(OBJS_DIR)/*
+	rm -r $(OBJ_DIR)/*
 
 run:
 	$(BUILD_DIR)/$(TARGET_EXEC)

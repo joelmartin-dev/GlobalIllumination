@@ -1,0 +1,37 @@
+TARGET_EXEC := main
+
+BUILD_DIR := build
+SRC_DIR := src
+DEPS_DIR := deps
+OBJS_DIR := objs
+LIBS_DIR := libs
+
+CC := clang
+CXX := clang++
+
+# Grab all the C and C++ files we want to compile from the SRC_DIR
+# Single quotes around the * lets the wildcard be passed to the find command, not evaluated inline
+# The find command returns all the files in a directory, including the directory as a prefix
+SRCS := $(shell find $(SRC_DIR) \( -name '*.cpp' -or -name '*.c' \))
+
+# Grab the files in DEPS_DIR without the $(DEPS_DIR) prefix
+DEPS := $(shell find $(DEPS_DIR) \( -name '*.cpp' -or -name '*.c' \) -printf '%P\n')
+
+# Grab the pre-compiled unassembled and unlinked object files
+OBJS := $(shell find $(OBJS_DIR) \( -name '*.o' -or -name '*.d' \))
+
+# Grab all the .d files correlated to .o
+MAKES := $(OBJS:.o=.d)
+
+# All the directories that contain files we need access to at compile?linking? time
+INC_DIRS := $(shell find $(SRCS_DIR) -type d) $(shell find $(DEPS_DIR) -type d) include/ $(VULKAN_SDK)/include
+# Turn the included directories into include flags by prepending -I to each
+INC_FLAGS := $(addprefix -I,$(INC_DIRS))
+
+WARNINGS := all error extra
+WARNING_FLAGS := $(addprefix -W,$(WARNINGS))
+0
+
+OPTIM_LEVEL := -O0
+
+CPP_FLAGS := $(WARNING_FLAGS) $(INC_FLAGS) -MMD -MO $(OPTIM_LEVEL)
