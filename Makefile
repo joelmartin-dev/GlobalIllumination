@@ -52,24 +52,42 @@ LD_FLAGS := -L$(LIB_DIR) -lglfw3 -L$(VULKAN_SDK)/lib -lvulkan -lglm
 # $< is the first prerequisite
 # $? is all prerequisites newer than target
 
-$(BUILD_DIR)/$(TARGET_EXEC): $(OBJS) $(MODULES_DIR)/$(VULKAN_HPP_MODULE).pcm
+$(BUILD_DIR)/$(TARGET_EXEC): $(OBJS)
 	mkdir -p $(dir $@)
 	$(CXX) $(OBJS) -o $@ $(LD_FLAGS)
 
-$(OBJ_DIR)/%.c.o: %.c
+$(OBJ_DIR)/%.c.o: %.c $(MODULES_DIR)/$(VULKAN_HPP_MODULE).pcm
 	mkdir -p $(dir $@)
 	$(CC) $(CPP_FLAGS) $(C_FLAGS) -c $< -o $@
 
-$(OBJ_DIR)/%.cpp.o: %.cpp
+$(OBJ_DIR)/%.cpp.o: %.cpp $(MODULES_DIR)/$(VULKAN_HPP_MODULE).pcm
 	mkdir -p $(dir $@)
 	$(CXX) $(CPP_FLAGS) $(CXX_FLAGS) -c $< -o $@
 
 $(MODULES_DIR)/$(VULKAN_HPP_MODULE).pcm: $(VULKAN_SDK)/include/vulkan/vulkan.cppm
+	mkdir -p $(dir $@)
 	$(CXX) $(CXX_VERSION) $(WARNING_FLAGS) -DVULKAN_HPP_NO_STRUCT_CONSTRUCTORS -I$(VULKAN_SDK)/include --precompile $< -o $@
-.PHONY: clean run
+
+
+ASSETS_DIR := assets
+SHADERS_DIR := shaders
+SPIRVS_DIR := shaders
+
+SHADERS = $(shell find $(ASSETS_DIR)/$(SHADERS_DIR) \( -name '*.slang' \) -printf '%P\n')
+SPIRVS = $(SHADERS:%.slang=$(BUILD_DIR)/$(SPIRVS_DIR)/%.spv)
+
+
+$(BUILD_DIR)/$(SPIRVS_DIR)/%.spv: $(ASSETS_DIR)/$(SHADERS_DIR)/%.slang
+	mkdir -p $(dir $@)
+	slangc $< -target spirv -profile spirv_1_4 -emit-spirv-directly -fvk-use-entrypoint-name -entry vertMain -entry fragMain -o $@
+
+.PHONY: shaders clean run
+
+shaders: $(SPIRVS)
 
 clean:
-	rm -r $(OBJ_DIR)/*
+	rm -rf $(OBJ_DIR)/*
+	rm -rf $(BUILD_DIR)/*
 
 run:
-	$(BUILD_DIR)/$(TARGET_EXEC)
+	cd $(BUILD_DIR); ./$(TARGET_EXEC)

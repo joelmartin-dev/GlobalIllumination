@@ -3,3 +3,10 @@
 .DS_Store
 .cache/
 *.save
+.clangd
+
+*.json
+
+obj/
+build/
+pcm.cache/
