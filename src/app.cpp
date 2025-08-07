@@ -1,10 +1,10 @@
 #include "app.hpp"
 
+#include <cstdint>
+#include <limits>
 #include <stdexcept>
 #include <vector>
-#include <iostream>
 #include <algorithm>
-#include <map>
 
 #ifndef _APP_HPP_
 #define GLFW_INCLUDE_VULKAN
@@ -19,34 +19,7 @@ import vulkan_hpp;
 #include <vulkan/vk_platform.h>
 #endif
 
-
-void App::initWindow()
-{
-  if (glfwInit() != GLFW_TRUE)
-  {
-    throw std::runtime_error("failed to initialise GLFW!");
-  }
-
-  glfwWindowHint(GLFW_CLIENT_API, GLFW_NO_API);
-  glfwWindowHint(GLFW_RESIZABLE, GLFW_FALSE);
-
-  pWindow = glfwCreateWindow(WIDTH, HEIGHT, "App", nullptr, nullptr);
-
-  if (pWindow == nullptr)
-  {
-    throw std::runtime_error("failed to create GLFWwindow!");
-  }
-
-};
-
-void App::initVulkan()
-{
-  createInstance();
-  setupDebugMessenger();
-  pickPhysicalDevice();
-};
-
-std::vector<const char*> App::getRequiredExtensions()
+std::vector<const char*> getRequiredExtensions()
 {
   uint32_t glfwExtensionCount = 0;
   auto glfwExtensions = glfwGetRequiredInstanceExtensions(&glfwExtensionCount);
@@ -126,6 +99,15 @@ void App::setupDebugMessenger()
   debugMessenger = instance.createDebugUtilsMessengerEXT(debugUtilsMessengerCreateInfoEXT);
 };
 
+void App::createSurface()
+{
+  VkSurfaceKHR _surface; // glfwCreateWindowSurface requires the struct defined in the C API
+  if (glfwCreateWindowSurface(*instance, pWindow, nullptr, &_surface) != VK_SUCCESS)
+  {
+    throw std::runtime_error("failed to create window surface!");
+  }
+  surface = vk::raii::SurfaceKHR(instance, _surface);
+};
 
 void App::pickPhysicalDevice()
 {
@@ -167,28 +149,49 @@ void App::pickPhysicalDevice()
   }
 };
 
-uint32_t App::findQueueFamilies(const vk::PhysicalDevice& _physicalDevice)
+// Set up as single queue for all needs
+uint32_t findQueueFamilies(const vk::PhysicalDevice& _physicalDevice, const vk::SurfaceKHR& _surface)
 {
   std::vector<vk::QueueFamilyProperties> queueFamilyProperties = _physicalDevice.getQueueFamilyProperties();
 
-  auto graphicsQueueFamilyProperty = std::find_if(queueFamilyProperties.begin(), queueFamilyProperties.end(), [](vk::QueueFamilyProperties const& qfp)
+  /* Example of how to get a potentially separate queue. For specific queues change the QueueFlagBits and variable names
+  auto graphicsQueueFamilyProperties = std::find_if(queueFamilyProperties.begin(), queueFamilyProperties.end(), [](const auto& qfp)
     {
       return !!(qfp.queueFlags & vk::QueueFlagBits::eGraphics);
     }
   );
+  auto graphicsIndex = static_cast<uint32_t>(std::distance(queueFamilyProperties.begin(), graphicsQueueFamilyProperties));
+  */
 
+  uint32_t queueFamilyIndex = ~0U; // like UINT_MAX
+
+  for (uint32_t qfpIndex = 0; qfpIndex < queueFamilyProperties.size(); qfpIndex++)
+  {
+    if ((queueFamilyProperties[qfpIndex].queueFlags & (vk::QueueFlagBits::eGraphics | vk::QueueFlagBits::eCompute)) &&
+      _physicalDevice.getSurfaceSupportKHR(qfpIndex, _surface))
+    {
+      queueFamilyIndex = qfpIndex;
+      break;
+    }
+  }
+
+  if (queueFamilyIndex == ~0U)
+  {
+    throw std::runtime_error("could not find a queue for graphics AND compute AND present!");
+  }
+  
   // return the index of the queue with a graphics queue family
-  return static_cast<uint32_t>(std::distance(queueFamilyProperties.begin(), graphicsQueueFamilyProperty));
+  return queueFamilyIndex;
 };
 
 void App::createLogicalDevice()
 {
   std::vector<vk::QueueFamilyProperties> queueFamilyProperties = physicalDevice.getQueueFamilyProperties();
-  uint32_t graphicsIndex = findQueueFamilies(physicalDevice);
+  uint32_t queueFamilyIndex = findQueueFamilies(physicalDevice, surface);
   float queuePriority = 0.0f;
 
   vk::DeviceQueueCreateInfo deviceQueueCreateInfo {
-    .queueFamilyIndex = graphicsIndex,
+    .queueFamilyIndex = queueFamilyIndex,
     .queueCount = 1,
     .pQueuePriorities = &queuePriority
   };
@@ -208,7 +211,136 @@ void App::createLogicalDevice()
   };
 
   device = vk::raii::Device(physicalDevice, deviceCreateInfo);
-  graphicsQueue = vk::raii::Queue(device, graphicsIndex, 0);
+  queue = vk::raii::Queue(device, queueFamilyIndex, 0);
+};
+
+static vk::SurfaceFormatKHR chooseSwapSurfaceFormat(const std::vector<vk::SurfaceFormatKHR>& availableFormats)
+{
+  const auto formIter = std::find_if(availableFormats.begin(), availableFormats.end(), [](const auto& availableFormat)
+    {
+      return (availableFormat.format == vk::Format::eB8G8R8A8Srgb && availableFormat.colorSpace == vk::ColorSpaceKHR::eSrgbNonlinear);
+    }
+  );
+
+  return formIter != availableFormats.end() ? *formIter : availableFormats[0];
+};
+
+static vk::PresentModeKHR chooseSwapPresentMode(const std::vector<vk::PresentModeKHR>& availablePresentModes)
+{
+  const auto presIter = std::find_if(availablePresentModes.begin(), availablePresentModes.end(), [](const auto& availablePresentMode)
+    {
+      return availablePresentMode == vk::PresentModeKHR::eMailbox;
+    }
+  );
+  
+  return presIter != availablePresentModes.end() ? vk::PresentModeKHR::eMailbox : vk::PresentModeKHR::eFifo;
+};
+
+static vk::Extent2D chooseSwapExtent(const vk::SurfaceCapabilitiesKHR& capabilities, GLFWwindow* const pWindow)
+{
+  if (capabilities.currentExtent.width != std::numeric_limits<uint32_t>::max())
+    return capabilities.currentExtent;
+  int width, height;
+  glfwGetFramebufferSize(pWindow, &width, &height);
+
+  return {
+    std::clamp<uint32_t>(width, capabilities.minImageExtent.width, capabilities.maxImageExtent.width),
+    std::clamp<uint32_t>(height, capabilities.minImageExtent.height, capabilities.maxImageExtent.height)
+  };
+};
+
+void App::createSwapChain()
+{
+  auto surfaceCapabilities = physicalDevice.getSurfaceCapabilitiesKHR(surface);
+  swapChainSurfaceFormat = chooseSwapSurfaceFormat(physicalDevice.getSurfaceFormatsKHR(surface));
+  auto swapChainPresentMode = chooseSwapPresentMode(physicalDevice.getSurfacePresentModesKHR(surface));
+  swapChainExtent = chooseSwapExtent(surfaceCapabilities, pWindow);
+  uint32_t minImageCount = std::max(3u, surfaceCapabilities.minImageCount);
+  // clamp to the maxImageCount so long as maxImageCount has a maximum and is < than minImageCount
+  minImageCount = (surfaceCapabilities.maxImageCount > 0 && minImageCount > surfaceCapabilities.maxImageCount) ? surfaceCapabilities.maxImageCount : minImageCount;
+  uint32_t imageCount = surfaceCapabilities.minImageCount + 1;
+  if (surfaceCapabilities.maxImageCount > 0 && imageCount > surfaceCapabilities.maxImageCount)
+    imageCount = surfaceCapabilities.maxImageCount;
+
+  vk::SwapchainCreateInfoKHR swapChainCreateInfo {
+    .flags = vk::SwapchainCreateFlagsKHR(),
+    .surface = surface,
+    .minImageCount = minImageCount,
+    .imageFormat = swapChainSurfaceFormat.format,
+    .imageColorSpace = swapChainSurfaceFormat.colorSpace,
+    .imageExtent = swapChainExtent,
+    .imageArrayLayers = 1,
+    .imageUsage = vk::ImageUsageFlagBits::eColorAttachment,
+    .imageSharingMode = vk::SharingMode::eExclusive,
+    .preTransform = surfaceCapabilities.currentTransform,
+    .compositeAlpha = vk::CompositeAlphaFlagBitsKHR::eOpaque,
+    .presentMode = swapChainPresentMode,
+    .clipped = vk::True,
+    .oldSwapchain = VK_NULL_HANDLE
+  };
+
+  swapChain = vk::raii::SwapchainKHR(device, swapChainCreateInfo, nullptr);
+  swapChainImages = swapChain.getImages();
+};
+
+void App::createImageViews()
+{
+  swapChainImageViews.clear();
+
+  vk::ImageViewCreateInfo imageViewCreateInfo {
+    .viewType = vk::ImageViewType::e2D,
+    .format = swapChainSurfaceFormat.format,
+    .subresourceRange = { 
+      .aspectMask = vk::ImageAspectFlagBits::eColor, 
+      .baseMipLevel = 0, 
+      .levelCount = 1, 
+      .baseArrayLayer = 0, 
+      .layerCount = 1 
+    }
+  };
+
+  for (auto image : swapChainImages)
+  {
+    imageViewCreateInfo.image = image;
+    swapChainImageViews.emplace_back(device, imageViewCreateInfo);
+  }
+};
+
+void App::createGraphicsPipeline()
+{
+  auto shaderCode = readFile("shaders/shader.spv");
+  
+};
+
+void App::initWindow()
+{
+  if (glfwInit() != GLFW_TRUE)
+  {
+    throw std::runtime_error("failed to initialise GLFW!");
+  }
+
+  glfwWindowHint(GLFW_CLIENT_API, GLFW_NO_API);
+  glfwWindowHint(GLFW_RESIZABLE, GLFW_FALSE);
+
+  pWindow = glfwCreateWindow(WIDTH, HEIGHT, "App", nullptr, nullptr);
+
+  if (pWindow == nullptr)
+  {
+    throw std::runtime_error("failed to create GLFWwindow!");
+  }
+
+};
+
+void App::initVulkan()
+{
+  createInstance();
+  setupDebugMessenger();
+  createSurface();
+  pickPhysicalDevice();
+  createLogicalDevice();
+  createSwapChain();
+  createImageViews();
+  createGraphicsPipeline();
 };
 
 void App::cleanup()

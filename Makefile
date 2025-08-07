@@ -86,8 +86,11 @@ $(BUILD_DIR)/$(SPIRVS_DIR)/%.spv: $(ASSETS_DIR)/$(SHADERS_DIR)/%.slang
 shaders: $(SPIRVS)
 
 clean:
-	rm -rf $(OBJ_DIR)/*
-	rm -rf $(BUILD_DIR)/*
+	rm -rf $(OBJ_DIR)
+	rm -rf $(BUILD_DIR)
+
+clean_vk:
+	rm -rf $(MODULES_DIR)
 
 run:
 	cd $(BUILD_DIR); ./$(TARGET_EXEC)

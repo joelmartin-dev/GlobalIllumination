@@ -3,6 +3,7 @@
 
 #include <vector>
 #include <iostream>
+#include <fstream>
 
 #define GLFW_INCLUDE_VULKAN
 #include <GLFW/glfw3.h>
@@ -14,6 +15,7 @@ import vulkan_hpp;
 #endif
 
 #include <vulkan/vk_platform.h>
+
 
 constexpr uint32_t WIDTH = 800;
 constexpr uint32_t HEIGHT = 600;
@@ -50,20 +52,43 @@ class App
   vk::raii::PhysicalDevice physicalDevice = nullptr;
   vk::raii::Device device = nullptr;
 
-  vk::raii::Queue graphicsQueue = nullptr;
+  vk::raii::Queue queue = nullptr;
+
+  vk::raii::SurfaceKHR surface = nullptr;
+  vk::SurfaceFormatKHR swapChainSurfaceFormat;
+  vk::Extent2D swapChainExtent;
+  vk::raii::SwapchainKHR swapChain = nullptr;
+  std::vector<vk::Image> swapChainImages;
+
+  std::vector<vk::raii::ImageView> swapChainImageViews;
 
   // Static Variables
 
   // Class Functions
   void initWindow();
+  
   void initVulkan();
-  std::vector<const char*> getRequiredExtensions();
   void createInstance();
   void setupDebugMessenger();
+  void createSurface();
   void pickPhysicalDevice();
-  uint32_t findQueueFamilies(const vk::PhysicalDevice& device);
   void createLogicalDevice();
+  void createSwapChain();
+  void createImageViews();
+  void createGraphicsPipeline();
+  [[nodiscard]] vk::raii::ShaderModule createShaderModule(const std::vector<char>& code) const {
+    vk::ShaderModuleCreateInfo createInfo {
+      .codeSize = code.size() * sizeof(char),
+      .pCode = reinterpret_cast<const uint32_t*>(code.data())
+    };
+
+    vk::raii::ShaderModule shaderModule{device, createInfo};
+
+    return shaderModule;
+  };
+
   void mainLoop();
+  
   void cleanup();
 
   // Static Functions
@@ -75,6 +100,22 @@ class App
     }
 
     return vk::False;
+  }
+
+  static std::vector<char> readFile(const std::string& fileName)
+  {
+    std::ifstream file(fileName, std::ios::ate | std::ios::binary);
+
+    if (!file.is_open())
+    {
+      throw std::runtime_error("failed to open file!");
+    }
+
+    std::vector<char> buffer(file.tellg());
+    file.seekg(0, std::ios::beg);
+    file.read(buffer.data(), static_cast<std::streamsize>(buffer.size()));
+    file.close();
+    return buffer;
   }
 };
 
