@@ -2,7 +2,7 @@
 
 TARGET_EXEC := main
 
-BUILD_DIR := build
+BUILD_DIR := bin
 SRC_DIR := src
 DEPS_DIR := deps
 OBJ_DIR := obj

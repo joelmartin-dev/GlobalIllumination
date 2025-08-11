@@ -6,13 +6,6 @@
 #include <fstream>
 #include <array>
 
-#ifndef IMGUI_IMPL_VULKAN_USE_VOLK
-#define IMGUI_IMPL_VULKAN_USE_VOLK
-#endif
-#include "imgui.h"
-#include "imgui_impl_glfw.h"
-#include "imgui_impl_vulkan.h"
-
 #include <volk/volk.h>
 #define GLFW_INCLUDE_NONE
 #include <GLFW/glfw3.h>
@@ -66,10 +59,21 @@ struct Vertex {
   }
 };
 
+struct UniformBufferObject {
+  alignas(16) glm::mat4 model;
+  alignas(16) glm::mat4 view;
+  alignas(16) glm::mat4 proj;
+};
+
 const std::vector<Vertex> vertices = {
-  {{0.0f, -0.5f}, {1.0f, 0.0f, 0.0f}},
-  {{0.5f, 0.5f}, {0.0f, 1.0f, 0.0f}},
-  {{-0.5f, 0.5f}, {0.0f, 0.0f, 1.0f}}
+  {{-0.5f, -0.5f}, {0.0f, 0.0f, 0.0f}},  
+  {{0.5f, -0.5f}, {1.0f, 0.0f, 0.0f}},
+  {{0.5f, 0.5f}, {1.0f, 1.0f, 0.0f}},
+  {{-0.5f, 0.5f}, {0.0f, 1.0f, 0.0f}},
+};
+
+const std::vector<uint16_t> indices = {
+  0, 1, 2, 2, 3, 0
 };
 
 class App
@@ -108,15 +112,28 @@ class App
   
   std::vector<vk::raii::ImageView> swapChainImageViews;
   
+  vk::raii::DescriptorSetLayout descriptorSetLayout = nullptr;
+
   vk::raii::PipelineLayout pipelineLayout = nullptr;
   vk::raii::Pipeline graphicsPipeline = nullptr;
   vk::SampleCountFlagBits msaaSamples = vk::SampleCountFlagBits::e1;
   
   vk::raii::CommandPool commandPool = nullptr;
+  std::vector<vk::raii::CommandBuffer> commandBuffers;
   vk::raii::Buffer vertexBuffer = nullptr;
   vk::raii::DeviceMemory vertexBufferMemory = nullptr;
-  std::vector<vk::raii::CommandBuffer> commandBuffers;
+  vk::raii::Buffer indexBuffer = nullptr;
+  vk::raii::DeviceMemory indexBufferMemory = nullptr;
+
+  std::vector<vk::raii::Buffer> uniformBuffers;
+  std::vector<vk::raii::DeviceMemory> uniformBuffersMemory;
+  std::vector<void*> uniformBuffersMapped;
+
+  vk::raii::DescriptorPool descriptorPool = nullptr;
+  vk::raii::DescriptorPool imguiDescriptorPool = nullptr;
+  std::vector<vk::raii::DescriptorSet> descriptorSets;
   
+
   std::vector<vk::raii::Semaphore> presentCompleteSemaphores;
   std::vector<vk::raii::Semaphore> renderFinishedSemaphores;
   std::vector<vk::raii::Fence> inFlightFences;
@@ -124,7 +141,6 @@ class App
   uint32_t currentFrame = 0;
   uint32_t semaphoreIndex = 0;
   
-  vk::raii::DescriptorPool descriptorPool = nullptr;
   
   // Static Variables
   
@@ -141,7 +157,7 @@ class App
   void createSwapChain();
   void createImageViews();
   void recreateSwapChain();
-  void createDescriptorPool();
+  void createDescriptorSetLayout();
   void createGraphicsPipeline();
   [[nodiscard]] vk::raii::ShaderModule createShaderModule(const std::vector<char>& code) const {
     vk::ShaderModuleCreateInfo createInfo {
@@ -157,7 +173,11 @@ class App
   uint32_t findMemoryType(uint32_t typeFilter, vk::MemoryPropertyFlags properties);
   void createBuffer(vk::DeviceSize size, vk::BufferUsageFlags usage, vk::MemoryPropertyFlags properties, vk::raii::Buffer& buffer, vk::raii::DeviceMemory& bufferMemory);
   void copyBuffer(vk::raii::Buffer& srcBuffer, vk::raii::Buffer& dstBuffer, vk::DeviceSize size);
-  void createVertexBuffers();
+  void createVertexBuffer();
+  void createIndexBuffer();
+  void createUniformBuffers();
+  void createDescriptorPool();
+  void createDescriptorSets();
   void createCommandBuffers();
   void transitionImageLayout(
     uint32_t imageIndex,
@@ -174,6 +194,7 @@ class App
   void initImGui();
   
   void mainLoop();
+  void updateUniformBuffer(uint32_t imageIndex);
   void drawFrame();
   
   void cleanupSwapChain();
