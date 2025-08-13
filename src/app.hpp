@@ -41,6 +41,7 @@ struct Vertex {
   // Attributes
   glm::vec2 pos;
   glm::vec3 colour;
+  glm::vec2 texCoord;
 
   // How the struct is passed
   static vk::VertexInputBindingDescription getBindingDescription()
@@ -49,14 +50,15 @@ struct Vertex {
   }
 
   // How the struct's data is laid out
-  static std::array<vk::VertexInputAttributeDescription, 2> getAttributeDescriptions()
+  static std::array<vk::VertexInputAttributeDescription, 3> getAttributeDescriptions()
   {
     return {
       // location, binding, format, offset
       // Binding is 0, as we decided in getBindingDescription
       // Formats are aliases for in-shader data types, e.g. R32Sfloat is float, R64Sfloat is double
       vk::VertexInputAttributeDescription(0, 0, vk::Format::eR32G32Sfloat, offsetof(Vertex, pos)),
-      vk::VertexInputAttributeDescription(1, 0, vk::Format::eR32G32B32Sfloat, offsetof(Vertex, colour))
+      vk::VertexInputAttributeDescription(1, 0, vk::Format::eR32G32B32Sfloat, offsetof(Vertex, colour)),
+      vk::VertexInputAttributeDescription(2, 0, vk::Format::eR32G32Sfloat, offsetof(Vertex, texCoord))
     };
   }
 };
@@ -68,10 +70,10 @@ struct UniformBufferObject {
 };
 
 const std::vector<Vertex> vertices = {
-  {{-0.5f, -0.5f}, {0.0f, 0.0f, 0.0f}},  
-  {{0.5f, -0.5f}, {1.0f, 0.0f, 0.0f}},
-  {{0.5f, 0.5f}, {1.0f, 1.0f, 0.0f}},
-  {{-0.5f, 0.5f}, {0.0f, 1.0f, 0.0f}},
+  {{-0.5f, -0.5f}, {0.0f, 0.0f, 0.0f}, {1.0f, 0.0f}},  
+  {{0.5f, -0.5f}, {1.0f, 0.0f, 0.0f}, {0.0f, 0.0f}},
+  {{0.5f, 0.5f}, {1.0f, 1.0f, 0.0f}, {0.0f, 1.0f}},
+  {{-0.5f, 0.5f}, {0.0f, 1.0f, 0.0f}, {1.0f, 1.0f}},
 };
 
 const std::vector<uint16_t> indices = {
@@ -134,8 +136,11 @@ class App
   
   vk::raii::CommandPool commandPool = nullptr;
   std::vector<vk::raii::CommandBuffer> commandBuffers;
-  vk::raii::Buffer textureImage = nullptr;
+  vk::raii::Image textureImage = nullptr;
   vk::raii::DeviceMemory textureImageMemory = nullptr;
+  vk::raii::ImageView textureImageView = nullptr;
+  vk::raii::Sampler textureSampler = nullptr;
+
   vk::raii::Buffer vertexBuffer = nullptr;
   vk::raii::DeviceMemory vertexBufferMemory = nullptr;
   vk::raii::Buffer indexBuffer = nullptr;
@@ -189,13 +194,17 @@ class App
   uint32_t findMemoryType(uint32_t typeFilter, vk::MemoryPropertyFlags properties);
   void createBuffer(vk::DeviceSize size, vk::BufferUsageFlags usage, vk::MemoryPropertyFlags properties, vk::raii::Buffer& buffer, vk::raii::DeviceMemory& bufferMemory);
   void copyBuffer(vk::raii::Buffer& srcBuffer, vk::raii::Buffer& dstBuffer, vk::DeviceSize size);
+  void copyBufferToImage(const vk::raii::Buffer& buffer, vk::raii::Image& image, uint32_t width, uint32_t height);
   void createImage(uint32_t width, uint32_t height, vk::Format format, vk::ImageTiling tiling, vk::ImageUsageFlags usage, vk::MemoryPropertyFlags properties, vk::raii::Image& image, vk::raii::DeviceMemory& imageMemory);
   void transitionTextureImageLayout(const vk::raii::Image& _textureImage, vk::ImageLayout oldLayout, vk::ImageLayout newLayout);
   void createTextureImage();
+  vk::raii::ImageView createImageView(vk::raii::Image& image, vk::Format format);
+  void createTextureImageView();
+  void createTextureSampler();
   void createVertexBuffer();
   void createIndexBuffer();
   void createUniformBuffers();
-  void createDescriptorPool();
+  void createDescriptorPools();
   void createDescriptorSets();
   void createCommandBuffers();
   void transitionImageLayout(
@@ -236,7 +245,7 @@ class App
 
     if (action == GLFW_REPEAT || action == GLFW_PRESS)
     {
-      std::clog << "PRESSING" << std::endl;
+      //std::clog << "PRESSING" << std::endl;
       switch (key)
       {
         case GLFW_KEY_W:
@@ -258,7 +267,7 @@ class App
 
     if (action == GLFW_RELEASE)
     {
-      std::clog << "RELEASING" << std::endl;
+      //std::clog << "RELEASING" << std::endl;
       switch (key)
       {
         case GLFW_KEY_W:
@@ -282,7 +291,7 @@ class App
   
   static void mouse_button_callback(GLFWwindow* _pWindow, int button, int action, int mods)
   {
-    (void) mods; (void) _pWindow; (void) action; (void) mods;
+    (void) button; (void) _pWindow; (void) action; (void) mods;
     // if (button == GLFW_MOUSE_BUTTON_LEFT && action == GLFW_PRESS && changeInputMode)
     // {
     //   changeInputMode = false;
