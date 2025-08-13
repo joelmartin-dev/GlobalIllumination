@@ -35,6 +35,8 @@ constexpr bool enableValidationLayers = true;
 
 #include <glm/glm.hpp>
 
+#include "camera.hpp"
+
 struct Vertex {
   // Attributes
   glm::vec2 pos;
@@ -76,6 +78,17 @@ const std::vector<uint16_t> indices = {
   0, 1, 2, 2, 3, 0
 };
 
+#ifndef MODEL_PATH
+#define MODEL_PATH "../assets/models/Sponza.gltf"
+#endif
+
+#ifndef TEXTURE_PATH
+#define TEXTURE_PATH "../assets/textures/texture.jpg"
+#endif
+
+static Camera camera;
+static bool changeInputMode = true;
+
 class App
 {
   public:
@@ -84,7 +97,8 @@ class App
   // Class Variables
   GLFWwindow* pWindow = nullptr;
   
-  
+  static int xpos, ypos;
+
   vk::raii::Context context;
   vk::raii::Instance instance = nullptr;
   vk::raii::DebugUtilsMessengerEXT debugMessenger = nullptr;
@@ -120,6 +134,8 @@ class App
   
   vk::raii::CommandPool commandPool = nullptr;
   std::vector<vk::raii::CommandBuffer> commandBuffers;
+  vk::raii::Buffer textureImage = nullptr;
+  vk::raii::DeviceMemory textureImageMemory = nullptr;
   vk::raii::Buffer vertexBuffer = nullptr;
   vk::raii::DeviceMemory vertexBufferMemory = nullptr;
   vk::raii::Buffer indexBuffer = nullptr;
@@ -173,6 +189,9 @@ class App
   uint32_t findMemoryType(uint32_t typeFilter, vk::MemoryPropertyFlags properties);
   void createBuffer(vk::DeviceSize size, vk::BufferUsageFlags usage, vk::MemoryPropertyFlags properties, vk::raii::Buffer& buffer, vk::raii::DeviceMemory& bufferMemory);
   void copyBuffer(vk::raii::Buffer& srcBuffer, vk::raii::Buffer& dstBuffer, vk::DeviceSize size);
+  void createImage(uint32_t width, uint32_t height, vk::Format format, vk::ImageTiling tiling, vk::ImageUsageFlags usage, vk::MemoryPropertyFlags properties, vk::raii::Image& image, vk::raii::DeviceMemory& imageMemory);
+  void transitionTextureImageLayout(const vk::raii::Image& _textureImage, vk::ImageLayout oldLayout, vk::ImageLayout newLayout);
+  void createTextureImage();
   void createVertexBuffer();
   void createIndexBuffer();
   void createUniformBuffers();
@@ -188,11 +207,15 @@ class App
     vk::PipelineStageFlags2 srcStageMask,
     vk::PipelineStageFlags2 dstStageMask
   );
+  vk::raii::CommandBuffer beginSingleTimeCommands();
+  void endSingleTimeCommands(vk::raii::CommandBuffer& commandBuffer);
   void recordCommandBuffer(uint32_t imageIndex);
   void createSyncObjects();
   
   void initImGui();
   
+  void initSponza();
+
   void mainLoop();
   void updateUniformBuffer(uint32_t imageIndex);
   void drawFrame();
@@ -210,10 +233,82 @@ class App
     {
       glfwSetWindowShouldClose(_pWindow, GLFW_TRUE);
     }
+
+    if (action == GLFW_REPEAT || action == GLFW_PRESS)
+    {
+      std::clog << "PRESSING" << std::endl;
+      switch (key)
+      {
+        case GLFW_KEY_W:
+          camera.velocity.z = -1.0f;
+          break;
+        case GLFW_KEY_A:
+          camera.velocity.x = -1.0f;
+          break;
+        case GLFW_KEY_S:
+          camera.velocity.z = 1.0f;
+          break;
+        case GLFW_KEY_D:
+          camera.velocity.x = 1.0f;
+          break;
+        default:
+          break;
+      }
+    }
+
+    if (action == GLFW_RELEASE)
+    {
+      std::clog << "RELEASING" << std::endl;
+      switch (key)
+      {
+        case GLFW_KEY_W:
+          camera.velocity.z = 0.0f;
+          break;
+        case GLFW_KEY_A:
+          camera.velocity.x = 0.0f;
+          break;
+        case GLFW_KEY_S:
+          camera.velocity.z = 0.0f;
+          break;
+        case GLFW_KEY_D:
+          camera.velocity.x = 0.0f;
+          break;
+        default:
+          break;
+      }
+    }
+
   };
+  
+  static void mouse_button_callback(GLFWwindow* _pWindow, int button, int action, int mods)
+  {
+    (void) mods; (void) _pWindow; (void) action; (void) mods;
+    // if (button == GLFW_MOUSE_BUTTON_LEFT && action == GLFW_PRESS && changeInputMode)
+    // {
+    //   changeInputMode = false;
+    //   if (glfwGetInputMode(_pWindow, GLFW_CURSOR) == GLFW_TRUE)
+    //   {
+    //     glfwSetInputMode(_pWindow, GLFW_RAW_MOUSE_MOTION, GLFW_FALSE);
+    //     glfwSetInputMode(_pWindow, GLFW_CURSOR, GLFW_CURSOR_NORMAL);
+    //   }
+    //   else
+    //   {
+    //     glfwSetInputMode(_pWindow, GLFW_RAW_MOUSE_MOTION, GLFW_TRUE);
+    //     glfwSetInputMode(_pWindow, GLFW_CURSOR, GLFW_CURSOR_DISABLED);
+    //   }
+    // }
+
+    // if (button == GLFW_MOUSE_BUTTON_LEFT && action == GLFW_RELEASE) changeInputMode = true;
+  }
+
+  static void scroll_callback(GLFWwindow* _pWindow, double xoffset, double yoffset)
+  {
+    (void) _pWindow; (void) xoffset; (void) yoffset;
+  }
 
   static void framebufferResizeCallback(GLFWwindow* _pWindow, int width, int height)
   {
+    (void) width; (void) height;
     auto app = reinterpret_cast<App*>(glfwGetWindowUserPointer(_pWindow));
     app->frameBufferResized = true;
   }

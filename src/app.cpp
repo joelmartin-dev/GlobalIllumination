@@ -16,10 +16,12 @@
 #include "imgui_impl_glfw.h"
 #include "imgui_impl_vulkan.h"
 
-#define TINYGLTF_IMPLEMENTATION
+#include "fastgltf/core.hpp"
+#include "fastgltf/types.hpp"
+#include "fastgltf/tools.hpp"
+
 #define STB_IMAGE_IMPLEMENTATION
-#define STB_IMAGE_WRITE_IMPLEMENTATION
-#include "tiny_gltf.h"
+#include <stb_image.h>
 
 std::vector<const char*> getRequiredExtensions()
 {
@@ -33,7 +35,7 @@ std::vector<const char*> getRequiredExtensions()
   }
 
   return extensions;
-};
+}
 
 void App::createInstance()
 {
@@ -89,7 +91,7 @@ void App::createInstance()
 
   instance = vk::raii::Instance(context, createInfo);
   volkLoadInstance(static_cast<VkInstance>(*instance));
-};
+}
 
 void App::setupDebugMessenger()
 {
@@ -105,7 +107,7 @@ void App::setupDebugMessenger()
   };
 
   debugMessenger = instance.createDebugUtilsMessengerEXT(debugUtilsMessengerCreateInfoEXT);
-};
+}
 
 void App::createSurface()
 {
@@ -115,7 +117,7 @@ void App::createSurface()
     throw std::runtime_error("failed to create window surface!");
   }
   surface = vk::raii::SurfaceKHR(instance, _surface);
-};
+}
 
 vk::SampleCountFlagBits App::getMaxUsableSampleCount()
 {
@@ -130,7 +132,7 @@ vk::SampleCountFlagBits App::getMaxUsableSampleCount()
   if (counts & vk::SampleCountFlagBits::e2) { return vk::SampleCountFlagBits::e2; }
 
   return vk::SampleCountFlagBits::e1;
-};
+}
 
 void App::pickPhysicalDevice()
 {
@@ -175,7 +177,7 @@ void App::pickPhysicalDevice()
   {
     throw std::runtime_error( "failed to find a suitable GPU!" );
   }
-};
+}
 
 // Set up as single queue for all needs
 uint32_t findQueueFamilies(const vk::raii::PhysicalDevice& _physicalDevice, const vk::SurfaceKHR& _surface)
@@ -210,7 +212,7 @@ uint32_t findQueueFamilies(const vk::raii::PhysicalDevice& _physicalDevice, cons
   
   // return the index of the queue with a graphics queue family
   return queueFamilyIndex;
-};
+}
 
 void App::createLogicalDevice()
 {
@@ -243,7 +245,7 @@ void App::createLogicalDevice()
   (void) computeIndex;
 
   volkLoadDevice(static_cast<VkDevice>(*device));
-};
+}
 
 vk::SurfaceFormatKHR chooseSwapSurfaceFormat(const std::vector<vk::SurfaceFormatKHR>& availableFormats)
 {
@@ -254,7 +256,7 @@ vk::SurfaceFormatKHR chooseSwapSurfaceFormat(const std::vector<vk::SurfaceFormat
   );
 
   return formIter != availableFormats.end() ? *formIter : availableFormats[0];
-};
+}
 
 vk::PresentModeKHR chooseSwapPresentMode(const std::vector<vk::PresentModeKHR>& availablePresentModes)
 {
@@ -265,7 +267,7 @@ vk::PresentModeKHR chooseSwapPresentMode(const std::vector<vk::PresentModeKHR>& 
   );
   
   return presIter != availablePresentModes.end() ? vk::PresentModeKHR::eMailbox : vk::PresentModeKHR::eFifo;
-};
+}
 
 vk::Extent2D chooseSwapExtent(const vk::SurfaceCapabilitiesKHR& capabilities, GLFWwindow* const _pWindow)
 {
@@ -279,7 +281,7 @@ vk::Extent2D chooseSwapExtent(const vk::SurfaceCapabilitiesKHR& capabilities, GL
     std::clamp<uint32_t>(width, capabilities.minImageExtent.width, capabilities.maxImageExtent.width),
     std::clamp<uint32_t>(height, capabilities.minImageExtent.height, capabilities.maxImageExtent.height)
   };
-};
+}
 
 void App::createSwapChain()
 {
@@ -313,7 +315,7 @@ void App::createSwapChain()
 
   swapChain = vk::raii::SwapchainKHR(device, swapChainCreateInfo, nullptr);
   swapChainImages = swapChain.getImages();
-};
+}
 
 void App::createImageViews()
 {
@@ -336,7 +338,7 @@ void App::createImageViews()
     imageViewCreateInfo.image = image;
     swapChainImageViews.emplace_back(device, imageViewCreateInfo);
   }
-};
+}
 
 void App::recreateSwapChain()
 {
@@ -354,7 +356,7 @@ void App::recreateSwapChain()
 
   createSwapChain();
   createImageViews();
-};
+}
 
 void App::createDescriptorSetLayout()
 {
@@ -365,7 +367,7 @@ void App::createDescriptorSetLayout()
   };
 
   descriptorSetLayout = vk::raii::DescriptorSetLayout(device, uboLayoutInfo);
-};
+}
 
 void App::createGraphicsPipeline()
 {
@@ -487,7 +489,7 @@ void App::createGraphicsPipeline()
   };
 
   graphicsPipeline = vk::raii::Pipeline(device, nullptr, graphicsPipelineInfo);
-};
+}
 
 void App::createCommandPool()
 {
@@ -496,7 +498,7 @@ void App::createCommandPool()
     .queueFamilyIndex = graphicsIndex,
   };
   commandPool = vk::raii::CommandPool(device, commandPoolInfo);
-};
+}
 
 uint32_t App::findMemoryType(uint32_t typeFilter, vk::MemoryPropertyFlags properties)
 {
@@ -512,7 +514,7 @@ uint32_t App::findMemoryType(uint32_t typeFilter, vk::MemoryPropertyFlags proper
   }
 
   throw std::runtime_error("failed to find suitable memory type!");
-};
+}
 
 void App::createBuffer(vk::DeviceSize size, vk::BufferUsageFlags usage, vk::MemoryPropertyFlags properties, vk::raii::Buffer& buffer, vk::raii::DeviceMemory& bufferMemory)
 {
@@ -529,30 +531,109 @@ void App::createBuffer(vk::DeviceSize size, vk::BufferUsageFlags usage, vk::Memo
     };
     bufferMemory = vk::raii::DeviceMemory(device, allocInfo);
     buffer.bindMemory(*bufferMemory, 0);
-};
+}
 
 void App::copyBuffer(vk::raii::Buffer& srcBuffer, vk::raii::Buffer& dstBuffer, vk::DeviceSize size)
 {
-  vk::CommandBufferAllocateInfo allocInfo {
-    .commandPool = commandPool,
-    .level = vk::CommandBufferLevel::ePrimary,
-    .commandBufferCount = 1
-  };
-  vk::raii::CommandBuffer commandCopyBuffer = std::move(device.allocateCommandBuffers(allocInfo).front());
-
-  commandCopyBuffer.begin(vk::CommandBufferBeginInfo {
-    .flags = vk::CommandBufferUsageFlagBits::eOneTimeSubmit
-  });
+  auto commandCopyBuffer = beginSingleTimeCommands();
   commandCopyBuffer.copyBuffer(srcBuffer, dstBuffer, vk::BufferCopy(0, 0, size));
+  endSingleTimeCommands(commandCopyBuffer);
+}
 
-  commandCopyBuffer.end();
+void App::createImage(uint32_t width, uint32_t height, vk::Format format, vk::ImageTiling tiling, vk::ImageUsageFlags usage, vk::MemoryPropertyFlags properties, vk::raii::Image& image, vk::raii::DeviceMemory& imageMemory) {
+    vk::ImageCreateInfo imageInfo {
+      .imageType = vk::ImageType::e2D,
+      .format = format,
+      .extent = {width, height, 1},
+      .mipLevels = 1,
+      .arrayLayers = 1,
+      .samples = vk::SampleCountFlagBits::e1,
+      .tiling = tiling,
+      .usage = usage,
+      .sharingMode = vk::SharingMode::eExclusive,
+      .queueFamilyIndexCount = 0
+    };
 
-  queue.submit(vk::SubmitInfo {
-    .commandBufferCount = 1,
-    .pCommandBuffers = &*commandCopyBuffer
-  }, nullptr);
-  queue.waitIdle();
-};
+    image = vk::raii::Image( device, imageInfo );
+
+    vk::MemoryRequirements memRequirements = image.getMemoryRequirements();
+    vk::MemoryAllocateInfo allocInfo{
+      .allocationSize = memRequirements.size, 
+      .memoryTypeIndex = findMemoryType(memRequirements.memoryTypeBits, properties)
+    };
+    imageMemory = vk::raii::DeviceMemory(device, allocInfo);
+    image.bindMemory(imageMemory, 0);
+}
+
+void App::transitionTextureImageLayout(const vk::raii::Image& _textureImage, vk::ImageLayout oldLayout, vk::ImageLayout newLayout)
+{
+  auto commandBuffer = beginSingleTimeCommands();
+
+  vk::ImageMemoryBarrier barrier {
+    .oldLayout = oldLayout,
+    .newLayout = newLayout,
+    .image = _textureImage,
+    .subresourceRange = {vk::ImageAspectFlagBits::eColor, 0, 1, 0, 1}
+  };
+
+  vk::PipelineStageFlags srcStage;
+  vk::PipelineStageFlags dstStage;
+
+  if (oldLayout == vk::ImageLayout::eUndefined && newLayout == vk::ImageLayout::eTransferDstOptimal)
+  {
+    barrier.srcAccessMask = {};
+    barrier.dstAccessMask = vk::AccessFlagBits::eTransferWrite;
+    
+    srcStage = vk::PipelineStageFlagBits::eTopOfPipe;
+    dstStage = vk::PipelineStageFlagBits::eTransfer;
+  }
+  else if (oldLayout == vk::ImageLayout::eTransferDstOptimal && newLayout == vk::ImageLayout::eShaderReadOnlyOptimal)
+  {
+    barrier.srcAccessMask = vk::AccessFlagBits::eTransferWrite;
+    barrier.dstAccessMask = vk::AccessFlagBits::eShaderRead;
+    
+    srcStage = vk::PipelineStageFlagBits::eTransfer;
+    dstStage = vk::PipelineStageFlagBits::eFragmentShader;
+  }
+  else
+  {
+    throw std::invalid_argument("unsupported layout transition!");
+  }
+  
+}
+
+void App::createTextureImage()
+{
+  int texWidth, texHeight, texChannels;
+  stbi_uc* pixels = stbi_load(TEXTURE_PATH, &texWidth, &texHeight, &texChannels, STBI_rgb_alpha);
+  vk::DeviceSize imageSize = texWidth * texHeight * 4; // width * height * channels used
+
+  if (pixels == nullptr)
+  {
+    throw std::runtime_error("failed to load texture image!");
+  }
+
+  vk::raii::Buffer stagingBuffer({});
+  vk::raii::DeviceMemory stagingBufferMemory({});
+
+  createBuffer(
+    imageSize,
+    vk::BufferUsageFlagBits::eTransferSrc,
+    vk::MemoryPropertyFlagBits::eHostVisible | vk::MemoryPropertyFlagBits::eHostCoherent,
+    stagingBuffer,
+    stagingBufferMemory
+  );
+
+  void* data = stagingBufferMemory.mapMemory(0, imageSize);
+  memcpy(data, pixels, imageSize);
+  stagingBufferMemory.unmapMemory();
+
+  stbi_image_free(pixels);
+
+  vk::raii::Image textureImageTemp({});
+  vk::raii::DeviceMemory textureImageMemoryTemp({});
+  createImage(static_cast<uint32_t>(texWidth), static_cast<uint32_t>(texHeight), vk::Format::eR8G8B8A8Srgb, vk::ImageTiling::eOptimal, vk::ImageUsageFlagBits::eTransferDst | vk::ImageUsageFlagBits::eSampled, vk::MemoryPropertyFlagBits::eDeviceLocal, textureImageTemp, textureImageMemoryTemp);
+}
 
 void App::createVertexBuffer()
 {
@@ -581,7 +662,7 @@ void App::createVertexBuffer()
   );
 
   copyBuffer(stagingBuffer, vertexBuffer, bufferSize);
-};
+}
 
 void App::createIndexBuffer()
 {
@@ -610,7 +691,7 @@ void App::createIndexBuffer()
   );
 
   copyBuffer(stagingBuffer, indexBuffer, bufferSize);
-};
+}
 
 void App::createUniformBuffers()
 {
@@ -628,7 +709,7 @@ void App::createUniformBuffers()
       uniformBuffersMemory.emplace_back(std::move(bufferMemory));
       uniformBuffersMapped.emplace_back(uniformBuffersMemory[i].mapMemory(0, bufferSize));
     }
-};
+}
 
 
 void App::createDescriptorPool()
@@ -666,7 +747,7 @@ void App::createDescriptorPool()
   };
 
   imguiDescriptorPool = vk::raii::DescriptorPool(device, imguiPoolInfo);
-};
+}
 
 void App::createDescriptorSets()
 {  
@@ -703,7 +784,7 @@ void App::createDescriptorSets()
 
     device.updateDescriptorSets(descriptorWrite, {});
   }
-};
+}
 
 void App::createCommandBuffers()
 {
@@ -716,7 +797,33 @@ void App::createCommandBuffers()
   };
 
   commandBuffers = vk::raii::CommandBuffers(device, allocInfo);
-};
+}
+
+vk::raii::CommandBuffer App::beginSingleTimeCommands()
+{
+  vk::CommandBufferAllocateInfo allocInfo {
+    .commandPool = commandPool,
+    .level = vk::CommandBufferLevel::ePrimary,
+    .commandBufferCount = 1
+  };
+  vk::raii::CommandBuffer commandBuffer = std::move(device.allocateCommandBuffers(allocInfo).front());
+
+  vk::CommandBufferBeginInfo beginInfo {
+    .flags = vk::CommandBufferUsageFlagBits::eOneTimeSubmit
+  };
+  commandBuffer.begin(beginInfo);
+}
+
+void App::endSingleTimeCommands(vk::raii::CommandBuffer& commandBuffer)
+{
+  commandBuffer.end();
+
+  vk::SubmitInfo submitInfo {
+    .pCommandBuffers = &*commandBuffer
+  };
+  queue.submit(submitInfo, nullptr);
+  queue.waitIdle();
+}
 
 void App::recordCommandBuffer(uint32_t imageIndex)
 {
@@ -783,7 +890,7 @@ void App::recordCommandBuffer(uint32_t imageIndex)
   );
 
   commandBuffers[currentFrame].end();
-};
+}
 
 void App::transitionImageLayout(
   uint32_t imageIndex,
@@ -839,7 +946,7 @@ void App::createSyncObjects()
   {    
     inFlightFences.emplace_back(device, vk::FenceCreateInfo {.flags = vk::FenceCreateFlagBits::eSignaled});
   }
-};
+}
 
 void App::updateUniformBuffer(uint32_t imageIndex)
 {
@@ -855,7 +962,7 @@ void App::updateUniformBuffer(uint32_t imageIndex)
   ubo.proj[1][1] *= -1;
 
   memcpy(uniformBuffersMapped[imageIndex], &ubo, sizeof(ubo));
-};
+}
 
 void App::drawFrame()
 {
@@ -916,32 +1023,6 @@ void App::drawFrame()
 
   semaphoreIndex = (semaphoreIndex + 1) % presentCompleteSemaphores.size();
   currentFrame = (currentFrame + 1) % MAX_FRAMES_IN_FLIGHT;
-};
-
-bool loadModel(tinygltf::Model &model, const char *filename) {
-  tinygltf::TinyGLTF loader;
-  std::string err;
-  std::string warn;
-
-  bool result = loader.LoadASCIIFromFile(&model, &err, &warn, filename);
-  if (!warn.empty()) {
-    std::clog << "WARN: " << warn << std::endl;
-  }
-
-  if (!err.empty()) {
-    throw std::runtime_error(err);
-  }
-
-  if (!result)
-  {
-    std::string error = "Failed to load glTF: ";
-    error.append(filename);
-    throw std::runtime_error(error);
-  }
-  else
-    std::clog << "Loaded glTF: " << filename << std::endl;
-
-  return result;
 }
 
 void App::initImGui()
@@ -987,7 +1068,12 @@ void App::initImGui()
   {
     throw std::runtime_error("failed to initialise ImGuiImplVulkan!");
   }
-};
+}
+
+void App::initSponza()
+{
+
+}
 
 void App::initWindow()
 {
@@ -1006,10 +1092,14 @@ void App::initWindow()
     throw std::runtime_error("failed to create GLFWwindow!");
   }
 
-  glfwSetKeyCallback(pWindow, key_callback);
-  glfwSetWindowUserPointer(pWindow, this);
   glfwSetFramebufferSizeCallback(pWindow, framebufferResizeCallback);
-};
+  glfwSetKeyCallback(pWindow, key_callback);
+  glfwSetMouseButtonCallback(pWindow, mouse_button_callback);
+  glfwSetScrollCallback(pWindow, scroll_callback);
+  
+  glfwSetWindowUserPointer(pWindow, this);
+  glfwSetInputMode(pWindow, GLFW_RAW_MOUSE_MOTION, GLFW_TRUE);
+}
 
 void App::initVulkan()
 {
@@ -1023,6 +1113,7 @@ void App::initVulkan()
   createDescriptorSetLayout();
   createGraphicsPipeline();
   createCommandPool();
+  //createTextureImage();
   createVertexBuffer();
   createIndexBuffer();
   createUniformBuffers();
@@ -1030,17 +1121,14 @@ void App::initVulkan()
   createDescriptorSets();
   createCommandBuffers();
   createSyncObjects();
-
-  tinygltf::Model model;
-  loadModel(model, "../assets/models/Sponza.gltf");
-};
+}
 
 void App::cleanupSwapChain()
 {
   swapChainImageViews.clear();
   swapChain = nullptr;
 
-};
+}
 
 void App::cleanup()
 {
@@ -1052,7 +1140,7 @@ void App::cleanup()
 
   glfwDestroyWindow(pWindow);
   glfwTerminate();
-};
+}
 
 void App::mainLoop()
 {
@@ -1076,13 +1164,14 @@ void App::mainLoop()
     drawFrame();
   }
   device.waitIdle();
-};
+}
 
 void App::run()
 {
   initWindow();
   initVulkan();
   initImGui();
+  initSponza();
   mainLoop();
   cleanup();
-};
+}

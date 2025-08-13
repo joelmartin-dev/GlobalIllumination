@@ -10,3 +10,4 @@
 obj/**
 build/**
 pcm.cache/**
+modules/**

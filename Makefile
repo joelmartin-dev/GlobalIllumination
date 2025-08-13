@@ -7,6 +7,7 @@ SRC_DIR := src
 DEPS_DIR := deps
 OBJ_DIR := obj
 LIB_DIR := lib
+MODULES_DIR := modules
 
 CC := clang
 CXX := clang++
@@ -17,6 +18,11 @@ CXX := clang++
 SRCS := $(shell find $(SRC_DIR) \( -name '*.cpp' -or -name '*.c' \))
 
 DEPS := $(shell find $(DEPS_DIR) \( -name '*.cpp' -or -name '*.c' \))
+
+VULKAN_HPP := vulkan_hpp
+VULKAN_HPP_MODULE := $(MODULES_DIR)/$(VULKAN_HPP).pcm
+MODULES := $(VULKAN_HPP)=$(VULKAN_HPP_MODULE)
+MODULES_FLAGS := $(addprefix -fmodule-file=,$(MODULES))
 
 # Grab the pre-compiled unassembled and unlinked object files
 OBJS := $(SRCS:%=$(OBJ_DIR)/%.o) $(DEPS:%=$(OBJ_DIR)/%.o)
@@ -41,12 +47,8 @@ D_FLAGS := $(addprefix -D,$(DEFINES))
 # C Preprocessor flags
 CPP_FLAGS := $(WARNING_FLAGS) $(INC_FLAGS) -MMD -MP $(OPTIM_LEVEL) $(D_FLAGS) $(DEBUG)
 
-MODULES_DIR := pcm.cache
-VULKAN_HPP_MODULE := vulkan_hpp
-MODULE_FLAG := -fmodule-file=$(VULKAN_HPP_MODULE)=$(MODULES_DIR)/$(VULKAN_HPP_MODULE).pcm
-
 CXX_VERSION := -std=c++20
-CXX_FLAGS := $(CXX_VERSION) $(MODULE_FLAG)
+CXX_FLAGS := $(CXX_VERSION) $(MODULES_FLAGS)
 
 C_VERSION := -std=c17
 C_FLAGS := $(C_VERSION)
@@ -66,14 +68,13 @@ $(OBJ_DIR)/%.c.o: %.c
 	mkdir -p $(dir $@)
 	$(CC) $(CPP_FLAGS) $(C_FLAGS) -c $< -o $@
 
-$(OBJ_DIR)/%.cpp.o: %.cpp $(MODULES_DIR)/$(VULKAN_HPP_MODULE).pcm
+$(OBJ_DIR)/%.cpp.o: %.cpp $(VULKAN_HPP_MODULE)
 	mkdir -p $(dir $@)
 	$(CXX) $(CPP_FLAGS) $(CXX_FLAGS) -c $< -o $@
 
-$(MODULES_DIR)/$(VULKAN_HPP_MODULE).pcm: $(VULKAN_SDK)/include/vulkan/vulkan.cppm
+$(VULKAN_HPP_MODULE): $(VULKAN_SDK)/include/vulkan/vulkan.cppm
 	mkdir -p $(dir $@)
 	$(CXX) $(CXX_VERSION) $(WARNING_FLAGS) $(D_FLAGS) -I$(VULKAN_SDK)/include --precompile $< -o $@
-
 
 ASSETS_DIR := assets
 SHADERS_DIR := shaders
@@ -97,7 +98,7 @@ clean:
 	rm -rf $(OBJ_DIR)
 	rm -rf $(BUILD_DIR)
 
-clean_vk:
+clean_modules:
 	rm -rf $(MODULES_DIR)
 
 run:
