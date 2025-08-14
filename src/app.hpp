@@ -5,6 +5,7 @@
 #include <iostream>
 #include <fstream>
 #include <array>
+#include <filesystem>
 
 #include <volk/volk.h>
 #define GLFW_INCLUDE_NONE
@@ -39,7 +40,7 @@ constexpr bool enableValidationLayers = true;
 
 struct Vertex {
   // Attributes
-  glm::vec2 pos;
+  glm::vec3 pos;
   glm::vec3 colour;
   glm::vec2 texCoord;
 
@@ -56,7 +57,7 @@ struct Vertex {
       // location, binding, format, offset
       // Binding is 0, as we decided in getBindingDescription
       // Formats are aliases for in-shader data types, e.g. R32Sfloat is float, R64Sfloat is double
-      vk::VertexInputAttributeDescription(0, 0, vk::Format::eR32G32Sfloat, offsetof(Vertex, pos)),
+      vk::VertexInputAttributeDescription(0, 0, vk::Format::eR32G32B32Sfloat, offsetof(Vertex, pos)),
       vk::VertexInputAttributeDescription(1, 0, vk::Format::eR32G32B32Sfloat, offsetof(Vertex, colour)),
       vk::VertexInputAttributeDescription(2, 0, vk::Format::eR32G32Sfloat, offsetof(Vertex, texCoord))
     };
@@ -70,14 +71,20 @@ struct UniformBufferObject {
 };
 
 const std::vector<Vertex> vertices = {
-  {{-0.5f, -0.5f}, {0.0f, 0.0f, 0.0f}, {1.0f, 0.0f}},  
-  {{0.5f, -0.5f}, {1.0f, 0.0f, 0.0f}, {0.0f, 0.0f}},
-  {{0.5f, 0.5f}, {1.0f, 1.0f, 0.0f}, {0.0f, 1.0f}},
-  {{-0.5f, 0.5f}, {0.0f, 1.0f, 0.0f}, {1.0f, 1.0f}},
+  {{-0.5f, -0.5f, -0.1f}, {0.0f, 0.0f, 0.0f}, {1.0f, 0.0f}},  
+  {{0.5f, -0.5f, -0.1f}, {1.0f, 0.0f, 0.0f}, {0.0f, 0.0f}},
+  {{0.5f, 0.5f, -0.1f}, {1.0f, 1.0f, 0.0f}, {0.0f, 1.0f}},
+  {{-0.5f, 0.5f, -0.1f}, {0.0f, 1.0f, 0.0f}, {1.0f, 1.0f}},
+
+  {{-0.5f, -0.5f, 0.1f}, {0.0f, 0.0f, 0.0f}, {1.0f, 0.0f}},  
+  {{0.5f, -0.5f, 0.1f}, {1.0f, 0.0f, 0.0f}, {0.0f, 0.0f}},
+  {{0.5f, 0.5f, 0.1f}, {1.0f, 1.0f, 0.0f}, {0.0f, 1.0f}},
+  {{-0.5f, 0.5f, 0.1f}, {0.0f, 1.0f, 0.0f}, {1.0f, 1.0f}},
 };
 
 const std::vector<uint16_t> indices = {
-  0, 1, 2, 2, 3, 0
+  4, 5, 6, 6, 7, 4,
+  0, 1, 2, 2, 3, 0,
 };
 
 #ifndef MODEL_PATH
@@ -141,6 +148,10 @@ class App
   vk::raii::ImageView textureImageView = nullptr;
   vk::raii::Sampler textureSampler = nullptr;
 
+  vk::raii::Image depthImage = nullptr;
+  vk::raii::DeviceMemory depthImageMemory = nullptr;
+  vk::raii::ImageView depthImageView = nullptr;
+
   vk::raii::Buffer vertexBuffer = nullptr;
   vk::raii::DeviceMemory vertexBufferMemory = nullptr;
   vk::raii::Buffer indexBuffer = nullptr;
@@ -196,9 +207,12 @@ class App
   void copyBuffer(vk::raii::Buffer& srcBuffer, vk::raii::Buffer& dstBuffer, vk::DeviceSize size);
   void copyBufferToImage(const vk::raii::Buffer& buffer, vk::raii::Image& image, uint32_t width, uint32_t height);
   void createImage(uint32_t width, uint32_t height, vk::Format format, vk::ImageTiling tiling, vk::ImageUsageFlags usage, vk::MemoryPropertyFlags properties, vk::raii::Image& image, vk::raii::DeviceMemory& imageMemory);
-  void transitionTextureImageLayout(const vk::raii::Image& _textureImage, vk::ImageLayout oldLayout, vk::ImageLayout newLayout);
+  void transitionImageLayout(const vk::raii::Image& image, vk::ImageLayout oldLayout, vk::ImageLayout newLayout);
+  vk::raii::ImageView createImageView(vk::raii::Image& image, vk::Format format, vk::ImageAspectFlags aspectFlags);
+  vk::Format findSupportedFormat(const std::vector<vk::Format>& candidates, vk::ImageTiling, vk::FormatFeatureFlags features);
+  vk::Format findDepthFormat();
+  void createDepthResources();
   void createTextureImage();
-  vk::raii::ImageView createImageView(vk::raii::Image& image, vk::Format format);
   void createTextureImageView();
   void createTextureSampler();
   void createVertexBuffer();
@@ -245,7 +259,7 @@ class App
 
     if (action == GLFW_REPEAT || action == GLFW_PRESS)
     {
-      //std::clog << "PRESSING" << std::endl;
+      std::clog << "PRESSING" << std::endl;
       switch (key)
       {
         case GLFW_KEY_W:
