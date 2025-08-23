@@ -18,6 +18,7 @@ import vulkan_hpp;
 #endif
 
 //#include <vulkan/vk_platform.h>
+#include <vulkan/vulkan_profiles.hpp>
 
 constexpr uint32_t WIDTH = 800;
 constexpr uint32_t HEIGHT = 600;
@@ -35,8 +36,28 @@ constexpr bool enableValidationLayers = true;
 #endif
 
 #include <glm/glm.hpp>
+#include <glm/ext/matrix_transform.hpp>
+#define GLM_ENABLE_EXPERIMENTAL
+#include <glm/gtx/hash.hpp>
 
 #include "camera.hpp"
+
+#include "fastgltf/core.hpp"
+
+#include "ktxvulkan.h"
+
+struct EngineStats {
+  long int frametime = 0L;
+  uint32_t tris = 0U;
+  uint32_t drawcalls = 0U;
+  long int sceneUpdateTime = 0L;
+  long int meshDrawTime = 0L;
+};
+
+struct AppInfo {
+  bool profileSupported = false;
+  VpProfileProperties profile;
+};
 
 struct Vertex {
   // Attributes
@@ -62,6 +83,20 @@ struct Vertex {
       vk::VertexInputAttributeDescription(2, 0, vk::Format::eR32G32Sfloat, offsetof(Vertex, texCoord))
     };
   }
+
+  bool operator==(const Vertex& other) const
+  {
+    return pos == other.pos && colour == other.colour && texCoord == other.texCoord;
+  }
+};
+
+template<> struct std::hash<Vertex> {
+  size_t operator()(Vertex const& vertex) const noexcept
+  {
+    return ((hash<glm::vec3>()(vertex.pos) ^
+            (hash<glm::vec3>()(vertex.colour) << 1 )) >> 1) ^
+            (hash<glm::vec2>()(vertex.texCoord) << 1);
+  }
 };
 
 struct UniformBufferObject {
@@ -70,30 +105,40 @@ struct UniformBufferObject {
   alignas(16) glm::mat4 proj;
 };
 
-const std::vector<Vertex> vertices = {
-  {{-0.5f, -0.5f, -0.1f}, {0.0f, 0.0f, 0.0f}, {1.0f, 0.0f}},  
-  {{0.5f, -0.5f, -0.1f}, {1.0f, 0.0f, 0.0f}, {0.0f, 0.0f}},
-  {{0.5f, 0.5f, -0.1f}, {1.0f, 1.0f, 0.0f}, {0.0f, 1.0f}},
-  {{-0.5f, 0.5f, -0.1f}, {0.0f, 1.0f, 0.0f}, {1.0f, 1.0f}},
-
-  {{-0.5f, -0.5f, 0.1f}, {0.0f, 0.0f, 0.0f}, {1.0f, 0.0f}},  
-  {{0.5f, -0.5f, 0.1f}, {1.0f, 0.0f, 0.0f}, {0.0f, 0.0f}},
-  {{0.5f, 0.5f, 0.1f}, {1.0f, 1.0f, 0.0f}, {0.0f, 1.0f}},
-  {{-0.5f, 0.5f, 0.1f}, {0.0f, 1.0f, 0.0f}, {1.0f, 1.0f}},
-};
-
-const std::vector<uint16_t> indices = {
-  4, 5, 6, 6, 7, 4,
-  0, 1, 2, 2, 3, 0,
-};
-
 #ifndef MODEL_PATH
-#define MODEL_PATH "../assets/models/Sponza.gltf"
+#define MODEL_PATH ""
 #endif
 
-#ifndef TEXTURE_PATH
-#define TEXTURE_PATH "../assets/textures/texture.jpg"
-#endif
+struct GameObject {
+  glm::vec3 translation = glm::vec3(0.0f);
+  glm::vec3 rotation = glm::vec3(0.0f);
+  glm::vec3 scale = glm::vec3(1.0f);
+
+  fastgltf::Primitive prim;
+
+  std::vector<uint32_t> indices;
+  // std::vector<Vertex> vertices;
+
+  size_t imageView;
+
+  // vk::raii::Buffer vertexBuffer = nullptr;
+  // vk::raii::DeviceMemory vertexBufferMemory = nullptr;
+  vk::raii::Buffer indexBuffer = nullptr;
+  vk::raii::DeviceMemory indexBufferMemory = nullptr;
+
+  std::vector<vk::raii::DescriptorSet> descriptorSets;
+
+  glm::mat4 getModelMatrix() const 
+  {
+    glm::mat4 model = glm::mat4(1.0f);
+    model = glm::translate(model, translation);
+    model = glm::rotate(model, rotation.x, glm::vec3(1.0f, 0.0f, 0.0f));
+    model = glm::rotate(model, rotation.y, glm::vec3(0.0f, 1.0f, 0.0f));
+    model = glm::rotate(model, rotation.z, glm::vec3(0.0f, 0.0f, 1.0f));
+    model = glm::scale(model, scale);
+    return model;
+  }
+};
 
 static Camera camera;
 static bool changeInputMode = true;
@@ -107,6 +152,14 @@ class App
   GLFWwindow* pWindow = nullptr;
   
   static int xpos, ypos;
+
+  EngineStats stats;
+  // std::vector<uint32_t> indices;
+  std::vector<Vertex> vertices;
+
+  fastgltf::Asset asset;
+
+  std::vector<GameObject> gameObjects;
 
   vk::raii::Context context;
   vk::raii::Instance instance = nullptr;
@@ -143,9 +196,9 @@ class App
   
   vk::raii::CommandPool commandPool = nullptr;
   std::vector<vk::raii::CommandBuffer> commandBuffers;
-  vk::raii::Image textureImage = nullptr;
-  vk::raii::DeviceMemory textureImageMemory = nullptr;
-  vk::raii::ImageView textureImageView = nullptr;
+  std::vector<vk::raii::Image> textureImages;
+  std::vector<vk::raii::DeviceMemory> textureImagesMemory;
+  std::vector<vk::raii::ImageView> textureImageViews;
   vk::raii::Sampler textureSampler = nullptr;
 
   vk::raii::Image depthImage = nullptr;
@@ -154,8 +207,8 @@ class App
 
   vk::raii::Buffer vertexBuffer = nullptr;
   vk::raii::DeviceMemory vertexBufferMemory = nullptr;
-  vk::raii::Buffer indexBuffer = nullptr;
-  vk::raii::DeviceMemory indexBufferMemory = nullptr;
+  // vk::raii::Buffer indexBuffer = nullptr;
+  // vk::raii::DeviceMemory indexBufferMemory = nullptr;
 
   std::vector<vk::raii::Buffer> uniformBuffers;
   std::vector<vk::raii::DeviceMemory> uniformBuffersMemory;
@@ -163,8 +216,6 @@ class App
 
   vk::raii::DescriptorPool descriptorPool = nullptr;
   vk::raii::DescriptorPool imguiDescriptorPool = nullptr;
-  std::vector<vk::raii::DescriptorSet> descriptorSets;
-  
 
   std::vector<vk::raii::Semaphore> presentCompleteSemaphores;
   std::vector<vk::raii::Semaphore> renderFinishedSemaphores;
@@ -172,6 +223,14 @@ class App
   bool frameBufferResized = false;
   uint32_t currentFrame = 0;
   uint32_t semaphoreIndex = 0;
+
+  AppInfo engineInfo = {};
+
+  struct SwapChainSupportDetails {
+    vk::SurfaceCapabilitiesKHR capabilities;
+    std::vector<vk::SurfaceFormatKHR> formats;
+    std::vector<vk::PresentModeKHR> presentModes;
+  };
   
   
   // Static Variables
@@ -183,7 +242,8 @@ class App
   void createInstance();
   void setupDebugMessenger();
   void createSurface();
-  vk::SampleCountFlagBits getMaxUsableSampleCount();
+  // vk::SampleCountFlagBits getMaxUsableSampleCount();
+  void checkFeatureSupport();
   void pickPhysicalDevice();
   void createLogicalDevice();
   void createSwapChain();
@@ -191,32 +251,23 @@ class App
   void recreateSwapChain();
   void createDescriptorSetLayout();
   void createGraphicsPipeline();
-  [[nodiscard]] vk::raii::ShaderModule createShaderModule(const std::vector<char>& code) const {
-    vk::ShaderModuleCreateInfo createInfo {
-      .codeSize = code.size() * sizeof(char),
-      .pCode = reinterpret_cast<const uint32_t*>(code.data())
-    };
-    
-    vk::raii::ShaderModule shaderModule{device, createInfo};
-    
-    return shaderModule;
-  };
+  [[nodiscard]] vk::raii::ShaderModule createShaderModule(const std::vector<char>& code) const;
   void createCommandPool();
   uint32_t findMemoryType(uint32_t typeFilter, vk::MemoryPropertyFlags properties);
   void createBuffer(vk::DeviceSize size, vk::BufferUsageFlags usage, vk::MemoryPropertyFlags properties, vk::raii::Buffer& buffer, vk::raii::DeviceMemory& bufferMemory);
   void copyBuffer(vk::raii::Buffer& srcBuffer, vk::raii::Buffer& dstBuffer, vk::DeviceSize size);
-  void copyBufferToImage(const vk::raii::Buffer& buffer, vk::raii::Image& image, uint32_t width, uint32_t height);
-  void createImage(uint32_t width, uint32_t height, vk::Format format, vk::ImageTiling tiling, vk::ImageUsageFlags usage, vk::MemoryPropertyFlags properties, vk::raii::Image& image, vk::raii::DeviceMemory& imageMemory);
-  void transitionImageLayout(const vk::raii::Image& image, vk::ImageLayout oldLayout, vk::ImageLayout newLayout);
-  vk::raii::ImageView createImageView(vk::raii::Image& image, vk::Format format, vk::ImageAspectFlags aspectFlags);
-  vk::Format findSupportedFormat(const std::vector<vk::Format>& candidates, vk::ImageTiling, vk::FormatFeatureFlags features);
-  vk::Format findDepthFormat();
+  void copyBufferToImage(const vk::raii::Buffer& buffer, const vk::raii::Image& image, uint32_t width, uint32_t height, uint32_t mipLevels, ktxTexture2* kTexture);
+  void createImage(uint32_t width, uint32_t height, vk::Format format, uint32_t mipLevels, vk::ImageTiling tiling, vk::ImageUsageFlags usage, vk::MemoryPropertyFlags properties, vk::raii::Image& image, vk::raii::DeviceMemory& imageMemory);
+  void transitionImageLayout(const vk::raii::Image& image, vk::ImageLayout oldLayout, vk::ImageLayout newLayout, uint32_t mipLevels);
+  [[nodiscard]] vk::raii::ImageView createImageView(const vk::raii::Image& image, vk::Format format, vk::ImageAspectFlags aspectFlags, uint32_t mipLevels) const;
+  vk::Format findSupportedFormat(const std::vector<vk::Format>& candidates, vk::ImageTiling, vk::FormatFeatureFlags features) const;
+  [[nodiscard]] vk::Format findDepthFormat() const;
   void createDepthResources();
-  void createTextureImage();
-  void createTextureImageView();
+  void createTextureImage(const char* texturePath);
+  void createTextureImageView(const vk::raii::Image& image, vk::Format format, uint32_t mipLevels);
   void createTextureSampler();
   void createVertexBuffer();
-  void createIndexBuffer();
+  void createIndexBuffers();
   void createUniformBuffers();
   void createDescriptorPools();
   void createDescriptorSets();
@@ -230,103 +281,51 @@ class App
     vk::PipelineStageFlags2 srcStageMask,
     vk::PipelineStageFlags2 dstStageMask
   );
-  vk::raii::CommandBuffer beginSingleTimeCommands();
-  void endSingleTimeCommands(vk::raii::CommandBuffer& commandBuffer);
+  std::unique_ptr<vk::raii::CommandBuffer> beginSingleTimeCommands();
+  void endSingleTimeCommands(const vk::raii::CommandBuffer& commandBuffer) const;
   void recordCommandBuffer(uint32_t imageIndex);
   void createSyncObjects();
   
   void initImGui();
   
-  void initSponza();
+  void loadAsset(std::filesystem::path path);
+  void loadTextures(std::filesystem::path path);
+  void loadGeometry();
 
   void mainLoop();
   void updateUniformBuffer(uint32_t imageIndex);
   void drawFrame();
   
   void cleanupSwapChain();
-  void cleanup();
+  void cleanup() const;
   
   // Static Functions
   static void key_callback(GLFWwindow* _pWindow, int key, int scancode, int action, int mods)
   {
-    // unused
-    (void)scancode; (void) mods;
-    
-    if (key == GLFW_KEY_ESCAPE && action == GLFW_PRESS)
-    {
-      glfwSetWindowShouldClose(_pWindow, GLFW_TRUE);
-    }
-
-    if (action == GLFW_REPEAT || action == GLFW_PRESS)
-    {
-      std::clog << "PRESSING" << std::endl;
-      switch (key)
-      {
-        case GLFW_KEY_W:
-          camera.velocity.z = -1.0f;
-          break;
-        case GLFW_KEY_A:
-          camera.velocity.x = -1.0f;
-          break;
-        case GLFW_KEY_S:
-          camera.velocity.z = 1.0f;
-          break;
-        case GLFW_KEY_D:
-          camera.velocity.x = 1.0f;
-          break;
-        default:
-          break;
-      }
-    }
-
-    if (action == GLFW_RELEASE)
-    {
-      //std::clog << "RELEASING" << std::endl;
-      switch (key)
-      {
-        case GLFW_KEY_W:
-          camera.velocity.z = 0.0f;
-          break;
-        case GLFW_KEY_A:
-          camera.velocity.x = 0.0f;
-          break;
-        case GLFW_KEY_S:
-          camera.velocity.z = 0.0f;
-          break;
-        case GLFW_KEY_D:
-          camera.velocity.x = 0.0f;
-          break;
-        default:
-          break;
-      }
-    }
-
-  };
-  
-  static void mouse_button_callback(GLFWwindow* _pWindow, int button, int action, int mods)
-  {
-    (void) button; (void) _pWindow; (void) action; (void) mods;
-    // if (button == GLFW_MOUSE_BUTTON_LEFT && action == GLFW_PRESS && changeInputMode)
-    // {
-    //   changeInputMode = false;
-    //   if (glfwGetInputMode(_pWindow, GLFW_CURSOR) == GLFW_TRUE)
-    //   {
-    //     glfwSetInputMode(_pWindow, GLFW_RAW_MOUSE_MOTION, GLFW_FALSE);
-    //     glfwSetInputMode(_pWindow, GLFW_CURSOR, GLFW_CURSOR_NORMAL);
-    //   }
-    //   else
-    //   {
-    //     glfwSetInputMode(_pWindow, GLFW_RAW_MOUSE_MOTION, GLFW_TRUE);
-    //     glfwSetInputMode(_pWindow, GLFW_CURSOR, GLFW_CURSOR_DISABLED);
-    //   }
-    // }
-
-    // if (button == GLFW_MOUSE_BUTTON_LEFT && action == GLFW_RELEASE) changeInputMode = true;
+    camera.key_callback(_pWindow, key, scancode, action, mods);
   }
 
-  static void scroll_callback(GLFWwindow* _pWindow, double xoffset, double yoffset)
+  static void cursor_pos_callback(GLFWwindow* _pWindow, double xpos, double ypos)
   {
-    (void) _pWindow; (void) xoffset; (void) yoffset;
+    if (glfwGetInputMode(_pWindow, GLFW_CURSOR) == GLFW_CURSOR_DISABLED)
+    {
+      camera.cursor_pos_callback(xpos, ypos);
+    }
+  }
+
+  static void mouse_button_callback(GLFWwindow* _pWindow, int button, int action, int mods)
+  {
+    (void) mods;
+    if (action == GLFW_PRESS)
+    {
+      switch (button)
+      {
+        case GLFW_MOUSE_BUTTON_LEFT:
+          glfwSetInputMode(_pWindow, GLFW_CURSOR, glfwGetInputMode(_pWindow, GLFW_CURSOR) == GLFW_CURSOR_NORMAL ? GLFW_CURSOR_DISABLED : GLFW_CURSOR_NORMAL);
+        default:
+          break;
+      }
+    }
   }
 
   static void framebufferResizeCallback(GLFWwindow* _pWindow, int width, int height)

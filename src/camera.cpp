@@ -5,21 +5,127 @@
 
 glm::mat4 Camera::getViewMatrix()
 {
-  glm::mat4 cameraTranslation = glm::translate(glm::mat4(1.0f), position);
-  glm::mat4 cameraRotation = getRotationMatrix();
-  return glm::inverse(cameraTranslation * cameraRotation);
+  return glm::lookAt(position, position + forward, glm::vec3(0.0f, 1.0f, 0.0f));
 }
 
 glm::mat4 Camera::getRotationMatrix()
 {
-  glm::quat pitchRotation = glm::angleAxis(pitch, glm::vec3 { 1.0f, 0.0f, 0.0f });
-  glm::quat yawRotation = glm::angleAxis(yaw, glm::vec3 { 0.0f, -1.0f, 0.0f });
-
-  return glm::mat4_cast(yawRotation) * glm::mat4_cast(pitchRotation);
+  return glm::identity<glm::mat4>();
 }
 
-void Camera::update()
+void Camera::update(float delta)
 {
-  glm::mat4 cameraRotation = getRotationMatrix();
-  position += glm::vec3(cameraRotation * glm::vec4(velocity * 0.5f, 0.0f));
+  forward.x = cos(yaw) * cos(pitch);
+  forward.y = sin(pitch);
+  forward.z = sin(yaw) * cos(pitch);
+  forward = glm::normalize(forward);
+
+  right = glm::normalize(glm::cross(forward, glm::vec3(0.0f, 1.0f, 0.0f)));
+
+  pitch += deltaPitch * rotSpeed * delta;
+  pitch = glm::mod(pitch + glm::pi<float>(), glm::pi<float>() * 2.0f) - glm::pi<float>();
+  yaw += deltaYaw * rotSpeed * delta;
+  yaw = glm::mod(yaw + glm::pi<float>(), glm::pi<float>() * 2.0f) - glm::pi<float>();
+
+  float mod = shiftMod ? shiftSpeed : 1.0f;
+
+  position += (forward * velocity.z + right * velocity.x + glm::vec3(0.0f, 1.0f, 0.0f) * velocity.y) * moveSpeed * delta * mod;
+}
+
+void Camera::cursor_pos_callback(double xpos, double ypos)
+{
+  double deltaXpos = oldXpos - xpos;
+  double deltaYpos = oldYpos - ypos;
+
+  oldXpos = xpos;
+  oldYpos = ypos;
+
+  deltaPitch = deltaYpos;
+  deltaYaw = -deltaXpos;
+}
+
+void Camera::key_callback(GLFWwindow* pWindow, int key, int scancode, int action, int mods)
+{
+  // unused
+  (void)scancode; (void) mods;
+  
+  if (key == GLFW_KEY_ESCAPE && action == GLFW_PRESS)
+  {
+    glfwSetWindowShouldClose(pWindow, GLFW_TRUE);
+  }
+
+  if (action == GLFW_REPEAT || action == GLFW_PRESS)
+  {
+    //std::clog << "PRESSING" << std::endl;
+    switch (key)
+    {
+      case GLFW_KEY_W:
+        velocity.z = 1.0f;
+        break;
+      case GLFW_KEY_A:
+        velocity.x = -1.0f;
+        break;
+      case GLFW_KEY_S:
+        velocity.z = -1.0f;
+        break;
+      case GLFW_KEY_D:
+        velocity.x = 1.0f;
+        break;
+      case GLFW_KEY_Q:
+        velocity.y = -1.0f;
+        break;
+      case GLFW_KEY_E:
+        velocity.y = 1.0f;
+        break;
+      case GLFW_KEY_UP:
+        deltaPitch = 1.0f;
+        break;
+      case GLFW_KEY_LEFT:
+        deltaYaw = -1.0f;
+        break;
+      case GLFW_KEY_DOWN:
+        deltaPitch = -1.0f;
+        break;
+      case GLFW_KEY_RIGHT:
+        deltaYaw = 1.0f;
+        break;
+      case GLFW_KEY_LEFT_SHIFT:
+        shiftMod = true;
+        break;
+      default:
+        break;
+    }
+  }
+
+  if (action == GLFW_RELEASE)
+  {
+    switch (key)
+    {
+      case GLFW_KEY_W:
+      case GLFW_KEY_S:
+        velocity.z = 0.0f;
+        break;
+      case GLFW_KEY_A:
+      case GLFW_KEY_D:
+        velocity.x = 0.0f;
+        break;
+      case GLFW_KEY_Q:
+      case GLFW_KEY_E:
+        velocity.y = 0.0f;
+        break;
+      case GLFW_KEY_UP:
+      case GLFW_KEY_DOWN:
+        deltaPitch = 0.0f;
+        break;
+      case GLFW_KEY_LEFT:
+      case GLFW_KEY_RIGHT:
+        deltaYaw = 0.0f;
+        break;
+      case GLFW_KEY_LEFT_SHIFT:
+        shiftMod = false;
+        break;
+      default:
+        break;
+    }
+  }
 }

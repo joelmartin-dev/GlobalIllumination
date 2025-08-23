@@ -31,5 +31,5 @@ Sampler2D texture;
 
 [shader("fragment")]
 float4 fragMain(VSOutput vertIn) : SV_TARGET {
-   return texture.Sample(vertIn.fragTexCoord);
+    return texture.Sample(vertIn.fragTexCoord);
 }

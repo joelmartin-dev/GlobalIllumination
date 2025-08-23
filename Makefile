@@ -8,6 +8,8 @@ DEPS_DIR := deps
 OBJ_DIR := obj
 LIB_DIR := lib
 MODULES_DIR := modules
+ASSETS_DIR := assets
+MODEL_PATH := ../$(ASSETS_DIR)/sponza/Sponza.gltf
 
 CC := clang
 CXX := clang++
@@ -41,7 +43,7 @@ OPTIM_LEVEL := -O0
 
 DEBUG := -g
 
-DEFINES := VULKAN_HPP_NO_STRUCT_CONSTRUCTORS IMGUI_IMPL_VULKAN_USE_VOLK# NDEBUG
+DEFINES := VULKAN_HPP_NO_STRUCT_CONSTRUCTORS IMGUI_IMPL_VULKAN_USE_VOLK MODEL_PATH=\"$(MODEL_PATH)\"# NDEBUG
 D_FLAGS := $(addprefix -D,$(DEFINES))
 
 # C Preprocessor flags
@@ -53,7 +55,7 @@ CXX_FLAGS := $(CXX_VERSION) $(MODULES_FLAGS)
 C_VERSION := -std=c17
 C_FLAGS := $(C_VERSION)
 
-LD_FLAGS := -L$(LIB_DIR) -lglfw3 -lvolk -lglm
+LD_FLAGS := -L$(LIB_DIR) -lglfw3 -lvolk -lglm -lktx -lktx_read
 
 # $@ is target name
 # $^ is all prerequisites
@@ -83,16 +85,52 @@ SPIRVS_DIR := shaders
 SHADERS = $(shell find $(ASSETS_DIR)/$(SHADERS_DIR) \( -name '*.slang' \) -printf '%P\n')
 SPIRVS = $(SHADERS:%.slang=$(BUILD_DIR)/$(SPIRVS_DIR)/%.spv)
 
-
 $(BUILD_DIR)/$(SPIRVS_DIR)/%.spv: $(ASSETS_DIR)/$(SHADERS_DIR)/%.slang
 	mkdir -p $(dir $@)
 	slangc $< -target spirv -profile spirv_1_4 -emit-spirv-directly -fvk-use-entrypoint-name -entry vertMain -entry fragMain -o $@
 
-.PHONY: printf shaders clean run
+# KTX_EXEC := ~/Documents/GraphicsProjects/KTX-Software/build/Release/toktx
+
+# SPONZA_DIR := $(ASSETS_DIR)/sponza
+
+# ALBEDO_DIR :=  $(SPONZA_DIR)/albedo
+# ALBEDO_JPG := $(shell find $(ALBEDO_DIR) -type f -name '*.jpg')
+# ALBEDO_PNG := $(shell find $(ALBEDO_DIR) -type f -name '*.png')
+# ALBEDO_KTX := $(ALBEDO_JPG:%.jpg=%.ktx2) $(ALBEDO_PNG:%.png=%.ktx2)
+
+# $(ALBEDO_DIR)/%.ktx2: $(ALBEDO_DIR)/%.jpg
+# 	$(KTX_EXEC) --t2 --target_type RGBA --genmipmap $@ $<
+
+# $(ALBEDO_DIR)/%.ktx2: $(ALBEDO_DIR)/%.png
+# 	$(KTX_EXEC) --t2 --target_type RGBA --genmipmap $@ $<
+
+# NORMAL_DIR := $(SPONZA_DIR)/normal
+# NORMAL_JPG := $(shell find $(NORMAL_DIR) -type f -name '*.jpg')
+# NORMAL_KTX := $(NORMAL_JPG:%.jpg=%.ktx2)
+
+# $(NORMAL_DIR)/%.ktx2: $(NORMAL_DIR)/%.jpg
+# 	$(KTX_EXEC) --t2 --target_type RGBA --assign_oetf linear --genmipmap --assign_primaries none $@ $<
+
+# METALROUGH_DIR := $(SPONZA_DIR)/metalrough
+# METALROUGH_JPG := $(shell find $(METALROUGH_DIR) -type f -name '*.jpg')
+# METALROUGH_KTX := $(METALROUGH_JPG:%.jpg=%.ktx2)
+
+# $(METALROUGH_DIR)/%.ktx2: $(METALROUGH_DIR)/%.jpg
+# 	$(KTX_EXEC) --t2 --target_type RGBA --assign_oetf linear --genmipmap --assign_primaries none $@ $<
+
+.PHONY: printf shaders textures clean clean_modules clean_albedo clean_normal clean_metalrough clean_textures run
 
 printf:
 
 shaders: $(SPIRVS)
+
+# albedos: $(ALBEDO_KTX)
+
+# normals: $(NORMAL_KTX)
+
+# metalroughs: $(METALROUGH_KTX)
+
+# textures: albedos normals metalroughs
 
 clean:
 	rm -rf $(OBJ_DIR)
@@ -101,5 +139,16 @@ clean:
 clean_modules:
 	rm -rf $(MODULES_DIR)
 
+# clean_albedo:
+# 	rm -f $(ALBEDO_KTX)
+
+# clean_normal:
+# 	rm -f $(NORMAL_KTX)
+
+# clean_metalrough:
+# 	rm -f $(METALROUGH_KTX)
+
+# clean_textures: clean_albedo clean_normal clean_metalrough
+	
 run:
 	cd $(BUILD_DIR); ./$(TARGET_EXEC)
