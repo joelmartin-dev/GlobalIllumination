@@ -6,3 +6,7 @@
 ## Linux
  * Make
  * Clang == 20.1.8
+
+### Ubuntu
+ * libgl-dev
+ * libglm-dev

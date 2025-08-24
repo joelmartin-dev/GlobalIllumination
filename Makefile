@@ -55,7 +55,7 @@ CXX_FLAGS := $(CXX_VERSION) $(MODULES_FLAGS)
 C_VERSION := -std=c17
 C_FLAGS := $(C_VERSION)
 
-LD_FLAGS := -L$(LIB_DIR) -lglfw3 -lvolk -lglm -lktx -lktx_read
+LD_FLAGS := -L$(LIB_DIR) -lglfw3 -lvolk -lktx -lktx_read
 
 # $@ is target name
 # $^ is all prerequisites
