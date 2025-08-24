@@ -21,10 +21,10 @@ SRCS := $(shell find $(SRC_DIR) \( -name '*.cpp' -or -name '*.c' \))
 
 DEPS := $(shell find $(DEPS_DIR) \( -name '*.cpp' -or -name '*.c' \))
 
-VULKAN_HPP := vulkan_hpp
-VULKAN_HPP_MODULE := $(MODULES_DIR)/$(VULKAN_HPP).pcm
-MODULES := $(VULKAN_HPP)=$(VULKAN_HPP_MODULE)
-MODULES_FLAGS := $(addprefix -fmodule-file=,$(MODULES))
+# VULKAN_HPP := vulkan_hpp
+# VULKAN_HPP_MODULE := $(MODULES_DIR)/$(VULKAN_HPP).pcm
+# MODULES := $(VULKAN_HPP)=$(VULKAN_HPP_MODULE)
+# MODULES_FLAGS := $(addprefix -fmodule-file=,$(MODULES))
 
 # Grab the pre-compiled unassembled and unlinked object files
 OBJS := $(SRCS:%=$(OBJ_DIR)/%.o) $(DEPS:%=$(OBJ_DIR)/%.o)
@@ -36,7 +36,7 @@ MAKES := $(OBJS:.o=.d)
 INC_DIRS := $(shell find $(SRC_DIR) -type d) $(shell find $(DEPS_DIR) -type d) $(VULKAN_SDK)/include include
 INC_FLAGS := $(addprefix -I,$(INC_DIRS))
 
-WARNINGS := all extra
+WARNINGS := all extra no-missing-field-initializers
 WARNING_FLAGS := $(addprefix -W,$(WARNINGS))
 
 OPTIM_LEVEL := -O0
@@ -50,12 +50,12 @@ D_FLAGS := $(addprefix -D,$(DEFINES))
 CPP_FLAGS := $(WARNING_FLAGS) $(INC_FLAGS) -MMD -MP $(OPTIM_LEVEL) $(D_FLAGS) $(DEBUG)
 
 CXX_VERSION := -std=c++20
-CXX_FLAGS := $(CXX_VERSION) $(MODULES_FLAGS)
+CXX_FLAGS := $(CXX_VERSION)# $(MODULES_FLAGS)
 
 C_VERSION := -std=c17
 C_FLAGS := $(C_VERSION)
 
-LD_FLAGS := -L$(LIB_DIR) -lglfw3 -lvolk -lktx -lktx_read
+LD_FLAGS := -L$(LIB_DIR) -lglfw3 -lvolk -lktx_read
 
 # $@ is target name
 # $^ is all prerequisites
@@ -70,22 +70,22 @@ $(OBJ_DIR)/%.c.o: %.c
 	mkdir -p $(dir $@)
 	$(CC) $(CPP_FLAGS) $(C_FLAGS) -c $< -o $@
 
-$(OBJ_DIR)/%.cpp.o: %.cpp $(VULKAN_HPP_MODULE)
+$(OBJ_DIR)/%.cpp.o: %.cpp# $(VULKAN_HPP_MODULE)
 	mkdir -p $(dir $@)
 	$(CXX) $(CPP_FLAGS) $(CXX_FLAGS) -c $< -o $@
 
-$(VULKAN_HPP_MODULE): $(VULKAN_SDK)/include/vulkan/vulkan.cppm
-	mkdir -p $(dir $@)
-	$(CXX) $(CXX_VERSION) $(WARNING_FLAGS) $(D_FLAGS) -I$(VULKAN_SDK)/include --precompile $< -o $@
+# $(VULKAN_HPP_MODULE): $(VULKAN_SDK)/include/vulkan/vulkan.cppm
+# 	mkdir -p $(dir $@)
+# 	$(CXX) $(CXX_VERSION) $(WARNING_FLAGS) $(D_FLAGS) -I$(VULKAN_SDK)/include --precompile $< -o $@
 
 ASSETS_DIR := assets
 SHADERS_DIR := shaders
 SPIRVS_DIR := shaders
 
 SHADERS = $(shell find $(ASSETS_DIR)/$(SHADERS_DIR) \( -name '*.slang' \) -printf '%P\n')
-SPIRVS = $(SHADERS:%.slang=$(BUILD_DIR)/$(SPIRVS_DIR)/%.spv)
+SPIRVS = $(SHADERS:%.slang=$(ASSETS_DIR)/$(SPIRVS_DIR)/%.spv)
 
-$(BUILD_DIR)/$(SPIRVS_DIR)/%.spv: $(ASSETS_DIR)/$(SHADERS_DIR)/%.slang
+$(ASSETS_DIR)/$(SPIRVS_DIR)/%.spv: $(ASSETS_DIR)/$(SHADERS_DIR)/%.slang
 	mkdir -p $(dir $@)
 	slangc $< -target spirv -profile spirv_1_4 -emit-spirv-directly -fvk-use-entrypoint-name -entry vertMain -entry fragMain -o $@
 
@@ -120,9 +120,19 @@ $(BUILD_DIR)/$(SPIRVS_DIR)/%.spv: $(ASSETS_DIR)/$(SHADERS_DIR)/%.slang
 
 .PHONY: printf shaders textures clean clean_modules clean_albedo clean_normal clean_metalrough clean_textures run
 
-printf:
+run:
+	cd $(BUILD_DIR); ./$(TARGET_EXEC)
 
 shaders: $(SPIRVS)
+
+clean:
+	rm -rf $(OBJ_DIR)
+	rm -rf $(BUILD_DIR)
+
+clean_shaders:
+	rm -r $(ASSETS_DIR)/$(SPIRVS_DIR)/*.spv
+
+printf:
 
 # albedos: $(ALBEDO_KTX)
 
@@ -132,12 +142,8 @@ shaders: $(SPIRVS)
 
 # textures: albedos normals metalroughs
 
-clean:
-	rm -rf $(OBJ_DIR)
-	rm -rf $(BUILD_DIR)
-
-clean_modules:
-	rm -rf $(MODULES_DIR)
+# clean_modules:
+# 	rm -rf $(MODULES_DIR)
 
 # clean_albedo:
 # 	rm -f $(ALBEDO_KTX)
@@ -150,5 +156,3 @@ clean_modules:
 
 # clean_textures: clean_albedo clean_normal clean_metalrough
 	
-run:
-	cd $(BUILD_DIR); ./$(TARGET_EXEC)

@@ -10,10 +10,10 @@ class Camera
 {
   public:
   glm::vec3 velocity = glm::vec3(0.0f);
-  glm::vec3 position = glm::vec3(0.0f, 0.0f, 2.0f);
+  glm::vec3 position = glm::vec3(0.0f, 0.3f, 0.0f);
   float pitch { 0.0f };
   float deltaPitch { 0.0f };
-  float yaw { -glm::pi<float>() / 2.0f };
+  float yaw { 0.0f };
   float deltaYaw { 0.0f };
   float moveSpeed { 1.0f };
   float rotSpeed { 2.0f };

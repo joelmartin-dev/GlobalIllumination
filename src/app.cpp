@@ -7,7 +7,6 @@
 #include <algorithm>
 #include <chrono>
 #include <memory>
-#include <unordered_map>
 
 #define GLM_FORCE_DEPTH_ZERO_TO_ONE
 #include <glm/glm.hpp>
@@ -419,7 +418,7 @@ void App::createDescriptorSetLayout()
 
 void App::createGraphicsPipeline()
 {
-  auto shaderModule = createShaderModule(readFile("shaders/shader.spv"));
+  auto shaderModule = createShaderModule(readFile(SHADER_PATH));
   
   vk::PipelineShaderStageCreateInfo vertShaderModuleCreateInfo {
     .stage = vk::ShaderStageFlagBits::eVertex,

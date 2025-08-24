@@ -11,13 +11,8 @@
 #define GLFW_INCLUDE_NONE
 #include <GLFW/glfw3.h>
 
-#if defined(__CLANGD__) || defined(__INTELLISENSE__)
 #include <vulkan/vulkan_raii.hpp>
-#else
-import vulkan_hpp;
-#endif
-
-//#include <vulkan/vk_platform.h>
+#include <vulkan/vk_platform.h>
 #include <vulkan/vulkan_profiles.hpp>
 
 constexpr uint32_t WIDTH = 800;
@@ -107,6 +102,10 @@ struct UniformBufferObject {
 
 #ifndef MODEL_PATH
 #define MODEL_PATH ""
+#endif
+
+#ifndef SHADER_PATH
+#define SHADER_PATH "../assets/shaders/shader.spv"
 #endif
 
 struct GameObject {
