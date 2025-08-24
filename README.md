@@ -5,8 +5,14 @@
 
 ## Linux
  * Make
- * Clang == 20.1.8
+ * Clang
 
 ### Ubuntu
  * libgl-dev
  * libglm-dev
+
+### Arch VM
+No suitable GPU will be detected for the virtual machine.\
+Using software rasterisation instead.
+ * mesa
+ * vulkan-swrast
