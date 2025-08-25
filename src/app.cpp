@@ -1347,7 +1347,7 @@ void App::loadAsset(std::filesystem::path path)
   auto data = fastgltf::GltfDataBuffer::FromPath(path);
   if (data.error() != fastgltf::Error::None)
   {
-    throw std::runtime_error(std::string("failed to load ").append(path));
+    throw std::runtime_error(std::string("failed to load ").append(path.string()));
   }
   else
   {
@@ -1357,7 +1357,7 @@ void App::loadAsset(std::filesystem::path path)
   auto parsed = parser.loadGltf(data.get(), path.parent_path(), options);
   if (parsed.error() != fastgltf::Error::None)
   {
-    throw std::runtime_error(std::string("failed to parse ").append(path));
+    throw std::runtime_error(std::string("failed to parse ").append(path.string()));
   }
   else
   {
@@ -1366,7 +1366,7 @@ void App::loadAsset(std::filesystem::path path)
 
   if (fastgltf::validate(parsed.get()) != fastgltf::Error::None)
   {
-    throw std::runtime_error(std::string("failed to validate ").append(path));
+    throw std::runtime_error(std::string("failed to validate ").append(path.string()));
   }
   else
   {
@@ -1447,7 +1447,7 @@ void App::loadTextures(std::filesystem::path path)
       [](auto& args) { (void)args; },
       [&](fastgltf::sources::URI& filePath)
       {
-        const std::string texturePath = path.parent_path().append(filePath.uri.path().begin(), filePath.uri.path().end());
+        const std::string texturePath = path.parent_path().append(filePath.uri.path().begin(), filePath.uri.path().end()).string();
         createTextureImage(texturePath.c_str());
       }
     },
@@ -1515,11 +1515,53 @@ void App::cleanupSwapChain()
   swapChain = nullptr;
 }
 
-void App::cleanup() const
+void App::cleanup()
 {
   ImGui_ImplVulkan_Shutdown();
   ImGui_ImplGlfw_Shutdown();
   ImGui::DestroyContext();
+
+  queue = nullptr;
+
+  surface = nullptr;
+  swapChain = nullptr;
+  swapChainImages.clear();
+
+  swapChainImageViews.clear();
+
+  descriptorSetLayout = nullptr;
+
+  pipelineLayout = nullptr;
+  graphicsPipeline = nullptr;
+  
+  commandPool = nullptr;
+  commandBuffers.clear();
+  textureImageViews.clear();
+  textureImagesMemory.clear();
+  textureImages.clear();
+  textureSampler = nullptr;
+
+  depthImage = nullptr;
+  depthImageMemory = nullptr;
+  depthImageView = nullptr;
+
+  vertexBuffer = nullptr;
+  vertexBufferMemory = nullptr;
+
+  uniformBuffers;
+  uniformBuffersMemory;
+
+  descriptorPool = nullptr;
+  imguiDescriptorPool = nullptr;
+
+  presentCompleteSemaphores.clear();
+  renderFinishedSemaphores.clear();
+  inFlightFences.clear();
+
+  device = nullptr;
+  physicalDevice = nullptr;
+  debugMessenger = nullptr;
+  instance = nullptr;
 
   glfwDestroyWindow(pWindow);
   glfwTerminate();

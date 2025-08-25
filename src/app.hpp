@@ -296,7 +296,7 @@ class App
   void drawFrame();
   
   void cleanupSwapChain();
-  void cleanup() const;
+  void cleanup();
   
   // Static Functions
   static void key_callback(GLFWwindow* _pWindow, int key, int scancode, int action, int mods)
