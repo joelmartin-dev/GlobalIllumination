@@ -1521,10 +1521,18 @@ void App::cleanup()
   ImGui_ImplGlfw_Shutdown();
   ImGui::DestroyContext();
 
+  for (auto& go : gameObjects)
+  {
+    go.indexBuffer = nullptr;
+    go.indexBufferMemory = nullptr;
+
+    go.descriptorSets.clear();
+  }
+
   queue = nullptr;
 
-  surface = nullptr;
   swapChain = nullptr;
+  surface = nullptr;
   swapChainImages.clear();
 
   swapChainImageViews.clear();
@@ -1534,8 +1542,8 @@ void App::cleanup()
   pipelineLayout = nullptr;
   graphicsPipeline = nullptr;
   
-  commandPool = nullptr;
   commandBuffers.clear();
+  commandPool = nullptr;
   textureImageViews.clear();
   textureImagesMemory.clear();
   textureImages.clear();
@@ -1548,8 +1556,8 @@ void App::cleanup()
   vertexBuffer = nullptr;
   vertexBufferMemory = nullptr;
 
-  uniformBuffers;
-  uniformBuffersMemory;
+  uniformBuffers.clear();
+  uniformBuffersMemory.clear();
 
   descriptorPool = nullptr;
   imguiDescriptorPool = nullptr;

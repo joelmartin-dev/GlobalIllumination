@@ -25,8 +25,10 @@ int main()
   return EXIT_SUCCESS;
 }
 
+#ifdef _WIN32
 int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE prevInstance, LPSTR lpCmdLine, int nCmdShow)
 {
     main();
     return 0;
 }
+#endif
