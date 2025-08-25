@@ -1488,7 +1488,7 @@ void App::initVulkan()
   setupDebugMessenger();
   createSurface();
   pickPhysicalDevice();
-  checkFeatureSupport();
+  //checkFeatureSupport();
   createLogicalDevice();
   createSwapChain();
   createImageViews();
