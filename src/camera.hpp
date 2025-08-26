@@ -16,7 +16,8 @@ class Camera
   float yaw { 0.0f };
   float deltaYaw { 0.0f };
   float moveSpeed { 1.0f };
-  float rotSpeed { 2.0f };
+  float pitchSpeed { 2.0f };
+  float yawSpeed{ 2.0f };
   bool shiftMod { false };
   float shiftSpeed { 2.0f };
 

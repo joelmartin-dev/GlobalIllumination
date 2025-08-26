@@ -1318,7 +1318,8 @@ void App::mainLoop()
       ImGui::Spacing();
       ImGui::SliderFloat("Rot Pitch", &camera.pitch, -glm::pi<float>(), glm::pi<float>());
       ImGui::SliderFloat("Rot Yaw", &camera.yaw, -glm::pi<float>(), glm::pi<float>());
-      ImGui::SliderFloat("Rot Speed", &camera.rotSpeed, 0.01f, 5.0f);
+      ImGui::SliderFloat("Pitch Speed", &camera.pitchSpeed, 0.01f, 5.0f);
+      ImGui::SliderFloat("Yaw Speed", &camera.yawSpeed, 0.01f, 5.0f);
       ImGui::Spacing();
       ImGui::SliderFloat("Shift Speed", &camera.shiftSpeed, 0.01f, 4.0f);
       ImGui::InputFloat("Delta Mult", &deltaMultiplier);

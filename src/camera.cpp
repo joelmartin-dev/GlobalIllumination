@@ -22,9 +22,9 @@ void Camera::update(float delta)
 
   right = glm::normalize(glm::cross(forward, glm::vec3(0.0f, 1.0f, 0.0f)));
 
-  pitch += deltaPitch * rotSpeed * delta;
+  pitch += deltaPitch * pitchSpeed * delta;
   pitch = glm::mod(pitch + glm::pi<float>(), glm::pi<float>() * 2.0f) - glm::pi<float>();
-  yaw += deltaYaw * rotSpeed * delta;
+  yaw += deltaYaw * yawSpeed * delta;
   yaw = glm::mod(yaw + glm::pi<float>(), glm::pi<float>() * 2.0f) - glm::pi<float>();
 
   float mod = shiftMod ? shiftSpeed : 1.0f;
@@ -92,7 +92,7 @@ void Camera::key_callback(GLFWwindow* pWindow, int key, int scancode, int action
       case GLFW_KEY_LEFT_SHIFT:
         shiftMod = true;
         break;
-      case GLFW_KEY_SPACE:
+      case GLFW_KEY_F:
         glfwSetInputMode(pWindow, GLFW_CURSOR, glfwGetInputMode(pWindow, GLFW_CURSOR) == GLFW_CURSOR_NORMAL ? GLFW_CURSOR_DISABLED : GLFW_CURSOR_NORMAL);
         break;
       default:
