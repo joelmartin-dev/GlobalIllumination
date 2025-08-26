@@ -7,10 +7,9 @@
  * Clang
 
 ### Ubuntu VM
- * lavapipe
+ * libgl-dev
 
 ### Arch VM
 No suitable GPU will be detected for the virtual machine.\
 Using software rasterisation instead.
- * mesa
  * vulkan-swrast
