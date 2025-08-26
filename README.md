@@ -3,12 +3,11 @@
  * Vulkan drivers (should be included with GPU manufacturer's drivers)
 
 ## Linux
- * glm (libglm-dev on Ubuntu, glm on Arch)
  * Make
  * Clang
 
 ### Ubuntu VM
- * libgl-dev
+ * lavapipe
 
 ### Arch VM
 No suitable GPU will be detected for the virtual machine.\

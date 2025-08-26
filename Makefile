@@ -36,7 +36,7 @@ MAKES := $(OBJS:.o=.d)
 INC_DIRS := $(shell find $(SRC_DIR) -type d) $(shell find $(DEPS_DIR) -type d) $(VULKAN_SDK)/include include
 INC_FLAGS := $(addprefix -I,$(INC_DIRS))
 
-WARNINGS := all extra no-missing-field-initializers
+WARNINGS := all extra no-missing-field-initializers no-unused-parameter
 WARNING_FLAGS := $(addprefix -W,$(WARNINGS))
 
 OPTIM_LEVEL := -O0

@@ -1,25 +1,58 @@
 #ifndef _APP_HPP_
 #define _APP_HPP_
 
-#include <vector>
-#include <iostream>
-#include <fstream>
-#include <array>
-#include <filesystem>
+#include <vector> // resizable container
+#include <array> // for c++-like syntax of user-type arrays
+#include <filesystem> // for platform-agnostic paths
 
-#include <volk/volk.h>
-#define GLFW_INCLUDE_NONE
-#include <GLFW/glfw3.h>
-
-#include <vulkan/vulkan_raii.hpp>
+// Windows has different calling conventions, vk_platform defines alternatives
 #include <vulkan/vk_platform.h>
-#include <vulkan/vulkan_profiles.hpp>
 
+// Meta-loader for vulkan functions
+// volk loads function pointers at runtime directly from the driver
+// rather than linking all of that information in the executable
+#include <volk/volk.h>
+
+// C++ bindings and RAII definitions for vulkan
+#include <vulkan/vulkan_raii.hpp>
+
+//#include <vulkan/vulkan_profiles.hpp> // provided profiles not compatible with some target hardware
+
+#define GLFW_INCLUDE_NONE
+#include <GLFW/glfw3.h> // for callback declarations, pWindow member
+
+// OpenGL Mathematics: for linear algebra functions
+#include <glm/glm.hpp>
+#include <glm/ext/matrix_transform.hpp>
+#define GLM_ENABLE_EXPERIMENTAL
+#include <glm/gtx/hash.hpp>
+
+// for declaring fastgltf members
+#include "fastgltf/types.hpp"
+
+// for ktxTexture2 type
+#include "ktx.h"
+
+// for camera member (stores universal uniform buffer)
+#include "camera.hpp"
+
+// constexpr allows for explicit typing (vs const)
 constexpr uint32_t WIDTH = 800;
 constexpr uint32_t HEIGHT = 600;
 
 constexpr uint32_t MAX_FRAMES_IN_FLIGHT = 2;
 
+// path to gltf, can be defined through compile-line preprocessor
+#ifndef MODEL_PATH
+#define MODEL_PATH ""
+#endif
+
+// path to spv, can be defined through compile-line preprocessor
+#ifndef SHADER_PATH
+#define SHADER_PATH "../assets/shaders/shader.spv"
+#endif
+
+// not array, implicit typing and contents are immutable
 const std::vector validationLayers = {
   "VK_LAYER_KHRONOS_validation"
 };
@@ -30,28 +63,13 @@ constexpr bool enableValidationLayers = false;
 constexpr bool enableValidationLayers = true;
 #endif
 
-#include <glm/glm.hpp>
-#include <glm/ext/matrix_transform.hpp>
-#define GLM_ENABLE_EXPERIMENTAL
-#include <glm/gtx/hash.hpp>
-
-#include "camera.hpp"
-
-#include "fastgltf/core.hpp"
-
-#include "ktxvulkan.h"
-
+// stores measurements data
 struct EngineStats {
   long int frametime = 0L;
   uint32_t tris = 0U;
   uint32_t drawcalls = 0U;
   long int sceneUpdateTime = 0L;
   long int meshDrawTime = 0L;
-};
-
-struct AppInfo {
-  bool profileSupported = false;
-  VpProfileProperties profile;
 };
 
 struct Vertex {
@@ -79,12 +97,14 @@ struct Vertex {
     };
   }
 
+  // equal_to function, needed for use of Vertex as Key in unordered containers e.g. unordered_map(Key, T, hash(Key), equal_to(Key))
   bool operator==(const Vertex& other) const
   {
     return pos == other.pos && colour == other.colour && texCoord == other.texCoord;
   }
 };
 
+// Hash function, needed for use of Vertex as Key in unordered containers e.g. unordered_map(Key, T, hash(Key), equal_to(Key))
 template<> struct std::hash<Vertex> {
   size_t operator()(Vertex const& vertex) const noexcept
   {
@@ -94,38 +114,32 @@ template<> struct std::hash<Vertex> {
   }
 };
 
-struct UniformBufferObject {
+// need to keep byte alignment in mind when defining probe and ray data structures
+// Model, View, Projection uniform buffer object struct
+struct MVP {
   alignas(16) glm::mat4 model;
   alignas(16) glm::mat4 view;
   alignas(16) glm::mat4 proj;
 };
 
-#ifndef MODEL_PATH
-#define MODEL_PATH ""
-#endif
+// stores the unique data of each primitive in a gltf
+struct PrimData {
+  fastgltf::Mesh* parent;
 
-#ifndef SHADER_PATH
-#define SHADER_PATH "../assets/shaders/shader.spv"
-#endif
+  std::vector<uint32_t> indices;
+  
+  vk::raii::Buffer indexBuffer = nullptr;
+  vk::raii::DeviceMemory indexBufferMemory = nullptr;
+  
+  size_t imageViewIndex;
 
-struct GameObject {
+  std::vector<vk::raii::DescriptorSet> descriptorSets;
+};
+
+struct MeshData {
   glm::vec3 translation = glm::vec3(0.0f);
   glm::vec3 rotation = glm::vec3(0.0f);
   glm::vec3 scale = glm::vec3(1.0f);
-
-  fastgltf::Primitive prim;
-
-  std::vector<uint32_t> indices;
-  // std::vector<Vertex> vertices;
-
-  size_t imageView;
-
-  // vk::raii::Buffer vertexBuffer = nullptr;
-  // vk::raii::DeviceMemory vertexBufferMemory = nullptr;
-  vk::raii::Buffer indexBuffer = nullptr;
-  vk::raii::DeviceMemory indexBufferMemory = nullptr;
-
-  std::vector<vk::raii::DescriptorSet> descriptorSets;
 
   glm::mat4 getModelMatrix() const 
   {
@@ -139,8 +153,8 @@ struct GameObject {
   }
 };
 
-static Camera camera;
-static bool changeInputMode = true;
+static Camera camera = {};
+static bool frameBufferResized = false;
 
 class App
 {
@@ -150,15 +164,17 @@ class App
   // Class Variables
   GLFWwindow* pWindow = nullptr;
   
-  static int xpos, ypos;
 
+  static int xpos, ypos;
+  
   EngineStats stats;
-  // std::vector<uint32_t> indices;
+  
   std::vector<Vertex> vertices;
 
   fastgltf::Asset asset;
 
-  std::vector<GameObject> gameObjects;
+  std::vector<MeshData> meshes;
+  std::vector<PrimData> prims;
 
   vk::raii::Context context;
   vk::raii::Instance instance = nullptr;
@@ -180,7 +196,7 @@ class App
   vk::raii::Queue queue = nullptr;
   
   vk::raii::SurfaceKHR surface = nullptr;
-  vk::SurfaceFormatKHR swapChainSurfaceFormat;
+  vk::Format swapChainSurfaceFormat;
   vk::Extent2D swapChainExtent;
   vk::raii::SwapchainKHR swapChain = nullptr;
   std::vector<vk::Image> swapChainImages;
@@ -206,8 +222,6 @@ class App
 
   vk::raii::Buffer vertexBuffer = nullptr;
   vk::raii::DeviceMemory vertexBufferMemory = nullptr;
-  // vk::raii::Buffer indexBuffer = nullptr;
-  // vk::raii::DeviceMemory indexBufferMemory = nullptr;
 
   std::vector<vk::raii::Buffer> uniformBuffers;
   std::vector<vk::raii::DeviceMemory> uniformBuffersMemory;
@@ -219,21 +233,15 @@ class App
   std::vector<vk::raii::Semaphore> presentCompleteSemaphores;
   std::vector<vk::raii::Semaphore> renderFinishedSemaphores;
   std::vector<vk::raii::Fence> inFlightFences;
-  bool frameBufferResized = false;
   uint32_t currentFrame = 0;
   uint32_t semaphoreIndex = 0;
-
-  AppInfo engineInfo = {};
 
   struct SwapChainSupportDetails {
     vk::SurfaceCapabilitiesKHR capabilities;
     std::vector<vk::SurfaceFormatKHR> formats;
     std::vector<vk::PresentModeKHR> presentModes;
   };
-  
-  
-  // Static Variables
-  
+
   // Class Functions
   void initWindow();
   
@@ -241,36 +249,86 @@ class App
   void createInstance();
   void setupDebugMessenger();
   void createSurface();
-  // vk::SampleCountFlagBits getMaxUsableSampleCount();
-  void checkFeatureSupport();
   void pickPhysicalDevice();
   void createLogicalDevice();
   void createSwapChain();
-  void createImageViews();
-  void recreateSwapChain();
+  void createSwapChainImageViews();
   void createDescriptorSetLayout();
   void createGraphicsPipeline();
   [[nodiscard]] vk::raii::ShaderModule createShaderModule(const std::vector<char>& code) const;
-  void createCommandPool();
-  uint32_t findMemoryType(uint32_t typeFilter, vk::MemoryPropertyFlags properties);
-  void createBuffer(vk::DeviceSize size, vk::BufferUsageFlags usage, vk::MemoryPropertyFlags properties, vk::raii::Buffer& buffer, vk::raii::DeviceMemory& bufferMemory);
-  void copyBuffer(vk::raii::Buffer& srcBuffer, vk::raii::Buffer& dstBuffer, vk::DeviceSize size);
-  void copyBufferToImage(const vk::raii::Buffer& buffer, const vk::raii::Image& image, uint32_t width, uint32_t height, uint32_t mipLevels, ktxTexture2* kTexture);
-  void createImage(uint32_t width, uint32_t height, vk::Format format, uint32_t mipLevels, vk::ImageTiling tiling, vk::ImageUsageFlags usage, vk::MemoryPropertyFlags properties, vk::raii::Image& image, vk::raii::DeviceMemory& imageMemory);
-  void transitionImageLayout(const vk::raii::Image& image, vk::ImageLayout oldLayout, vk::ImageLayout newLayout, uint32_t mipLevels);
-  [[nodiscard]] vk::raii::ImageView createImageView(const vk::raii::Image& image, vk::Format format, vk::ImageAspectFlags aspectFlags, uint32_t mipLevels) const;
-  vk::Format findSupportedFormat(const std::vector<vk::Format>& candidates, vk::ImageTiling, vk::FormatFeatureFlags features) const;
   [[nodiscard]] vk::Format findDepthFormat() const;
+  vk::Format findSupportedFormat(
+    const std::vector<vk::Format>& candidates, 
+    vk::ImageTiling, 
+    vk::FormatFeatureFlags features
+  ) const;
+  void createCommandPool();
   void createDepthResources();
+  void createImage(
+    uint32_t width, uint32_t height, uint32_t mipLevels, 
+    vk::Format format,
+    vk::ImageTiling tiling,
+    vk::ImageUsageFlags usage,
+    vk::MemoryPropertyFlags properties,
+    vk::raii::Image& image,
+    vk::raii::DeviceMemory& imageMemory
+  );
+  uint32_t findMemoryType(uint32_t typeFilter, vk::MemoryPropertyFlags properties);
+  [[nodiscard]] vk::raii::ImageView createImageView(
+    const vk::raii::Image& image,
+    vk::Format format,
+    vk::ImageAspectFlags aspectFlags,
+    uint32_t mipLevels
+  ) const;
+  void loadAsset(std::filesystem::path path);
+  void loadTextures(std::filesystem::path path);
   void createTextureImage(const char* texturePath);
-  void createTextureImageView(const vk::raii::Image& image, vk::Format format, uint32_t mipLevels);
+  void createBuffer(
+    vk::DeviceSize size,
+    vk::BufferUsageFlags usage,
+    vk::MemoryPropertyFlags properties,
+    vk::raii::Buffer& buffer,
+    vk::raii::DeviceMemory& bufferMemory
+  );
+  void transitionImageLayout(
+    const vk::raii::Image& image,
+    vk::ImageLayout oldLayout, vk::ImageLayout newLayout,
+    uint32_t mipLevels
+  );
+  std::unique_ptr<vk::raii::CommandBuffer> beginSingleTimeCommands();
+  void endSingleTimeCommands(const vk::raii::CommandBuffer& commandBuffer) const;
+  void copyBufferToImage(
+    const vk::raii::Buffer& buffer,
+    const vk::raii::Image& image,
+    uint32_t width, uint32_t height, uint32_t mipLevels,
+    ktxTexture2* kTexture
+  );
+  void createTextureImageView(
+    const vk::raii::Image& image, 
+    vk::Format format, 
+    uint32_t mipLevels
+  );
   void createTextureSampler();
+  void loadGeometry();
+  void copyBuffer(
+    vk::raii::Buffer& srcBuffer, vk::raii::Buffer& dstBuffer,
+    vk::DeviceSize size
+  );
   void createVertexBuffer();
   void createIndexBuffers();
   void createUniformBuffers();
   void createDescriptorPools();
   void createDescriptorSets();
   void createCommandBuffers();
+  void createSyncObjects();
+
+  void initImGui();
+  
+  void mainLoop();
+  void drawFrame();
+  void recreateSwapChain();
+  void cleanupSwapChain();
+  void updateModelViewProjection(uint32_t imageIndex);
   void transitionImageLayout(
     uint32_t imageIndex,
     vk::ImageLayout oldLayout,
@@ -280,30 +338,15 @@ class App
     vk::PipelineStageFlags2 srcStageMask,
     vk::PipelineStageFlags2 dstStageMask
   );
-  std::unique_ptr<vk::raii::CommandBuffer> beginSingleTimeCommands();
-  void endSingleTimeCommands(const vk::raii::CommandBuffer& commandBuffer) const;
   void recordCommandBuffer(uint32_t imageIndex);
-  void createSyncObjects();
   
-  void initImGui();
-  
-  void loadAsset(std::filesystem::path path);
-  void loadTextures(std::filesystem::path path);
-  void loadGeometry();
-
-  void mainLoop();
-  void updateUniformBuffer(uint32_t imageIndex);
-  void drawFrame();
-  
-  void cleanupSwapChain();
   void cleanup();
   
-  // Static Functions
   static void key_callback(GLFWwindow* _pWindow, int key, int scancode, int action, int mods)
   {
     camera.key_callback(_pWindow, key, scancode, action, mods);
   }
-
+  
   static void cursor_pos_callback(GLFWwindow* _pWindow, double xpos, double ypos)
   {
     if (glfwGetInputMode(_pWindow, GLFW_CURSOR) == GLFW_CURSOR_DISABLED)
@@ -311,54 +354,12 @@ class App
       camera.cursor_pos_callback(xpos, ypos);
     }
   }
-
-  static void mouse_button_callback(GLFWwindow* _pWindow, int button, int action, int mods)
-  {
-    (void) mods;
-    if (action == GLFW_PRESS)
-    {
-      switch (button)
-      {
-        case GLFW_MOUSE_BUTTON_LEFT:
-          glfwSetInputMode(_pWindow, GLFW_CURSOR, glfwGetInputMode(_pWindow, GLFW_CURSOR) == GLFW_CURSOR_NORMAL ? GLFW_CURSOR_DISABLED : GLFW_CURSOR_NORMAL);
-        default:
-          break;
-      }
-    }
-  }
-
+  
   static void framebufferResizeCallback(GLFWwindow* _pWindow, int width, int height)
   {
-    (void) width; (void) height;
-    auto app = reinterpret_cast<App*>(glfwGetWindowUserPointer(_pWindow));
-    app->frameBufferResized = true;
-  }
-
-  static VKAPI_ATTR vk::Bool32 VKAPI_CALL debugCallback(vk::DebugUtilsMessageSeverityFlagBitsEXT severity, vk::DebugUtilsMessageTypeFlagsEXT type, const vk::DebugUtilsMessengerCallbackDataEXT* pCallbackData, void*)
-  {
-    if (severity == vk::DebugUtilsMessageSeverityFlagBitsEXT::eError)
-    {
-      std::cerr << "validation layer: type " << to_string(type) << " msg: " << pCallbackData->pMessage << std::endl;
-    }
-
-    return vk::False;
-  }
-
-  static std::vector<char> readFile(const std::string& fileName)
-  {
-    std::ifstream file(fileName, std::ios::ate | std::ios::binary);
-
-    if (!file.is_open())
-    {
-      throw std::runtime_error("failed to open file!");
-    }
-
-    std::vector<char> buffer(file.tellg());
-    file.seekg(0, std::ios::beg);
-    file.read(buffer.data(), static_cast<std::streamsize>(buffer.size()));
-    file.close();
-    return buffer;
+    frameBufferResized = true;
   }
 };
+
 
 #endif

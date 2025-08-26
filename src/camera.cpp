@@ -92,6 +92,9 @@ void Camera::key_callback(GLFWwindow* pWindow, int key, int scancode, int action
       case GLFW_KEY_LEFT_SHIFT:
         shiftMod = true;
         break;
+      case GLFW_KEY_SPACE:
+        glfwSetInputMode(pWindow, GLFW_CURSOR, glfwGetInputMode(pWindow, GLFW_CURSOR) == GLFW_CURSOR_NORMAL ? GLFW_CURSOR_DISABLED : GLFW_CURSOR_NORMAL);
+        break;
       default:
         break;
     }
