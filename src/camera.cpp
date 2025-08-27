@@ -22,9 +22,9 @@ void Camera::update(float delta)
 
   right = glm::normalize(glm::cross(forward, glm::vec3(0.0f, 1.0f, 0.0f)));
 
-  pitch += deltaPitch * pitchSpeed * delta;
+  pitch += static_cast<float>(deltaPitch) * pitchSpeed * delta;
   pitch = glm::mod(pitch + glm::pi<float>(), glm::pi<float>() * 2.0f) - glm::pi<float>();
-  yaw += deltaYaw * yawSpeed * delta;
+  yaw += static_cast<float>(deltaYaw) * yawSpeed * delta;
   yaw = glm::mod(yaw + glm::pi<float>(), glm::pi<float>() * 2.0f) - glm::pi<float>();
 
   float mod = shiftMod ? shiftSpeed : 1.0f;

@@ -4,7 +4,7 @@
 
 static VKAPI_ATTR vk::Bool32 VKAPI_CALL debugCallback(vk::DebugUtilsMessageSeverityFlagBitsEXT severity, vk::DebugUtilsMessageTypeFlagsEXT type, const vk::DebugUtilsMessengerCallbackDataEXT* pCallbackData, void*)
 {
-  if (severity == vk::DebugUtilsMessageSeverityFlagBitsEXT::eError)
+  if ((severity & vk::DebugUtilsMessageSeverityFlagBitsEXT::eError) == severity)
   {
     std::cerr << "validation layer: type " << to_string(type) << " msg: " << pCallbackData->pMessage << std::endl;
   }
@@ -966,7 +966,7 @@ void App::loadGeometry()
     {
       prims.emplace_back(PrimData{});
 
-      auto v_offset = vertices.size();
+      uint32_t v_offset = static_cast<uint32_t>(vertices.size());
 
       if (p.indicesAccessor.has_value())
       {
@@ -1115,8 +1115,8 @@ void App::createUniformBuffers()
 void App::createDescriptorPools()
 {
   std::array poolSizes = {
-    vk::DescriptorPoolSize(vk::DescriptorType::eUniformBuffer, MAX_FRAMES_IN_FLIGHT * prims.size()),
-    vk::DescriptorPoolSize(vk::DescriptorType::eCombinedImageSampler, MAX_FRAMES_IN_FLIGHT * prims.size())
+    vk::DescriptorPoolSize(vk::DescriptorType::eUniformBuffer, MAX_FRAMES_IN_FLIGHT * static_cast<uint32_t>(prims.size())),
+    vk::DescriptorPoolSize(vk::DescriptorType::eCombinedImageSampler, MAX_FRAMES_IN_FLIGHT * static_cast<uint32_t>(prims.size()))
   };
 
   vk::DescriptorPoolCreateInfo poolInfo {
@@ -1286,7 +1286,7 @@ void App::mainLoop()
   float deltaMultiplier = 1000000.0f;
   for (auto& p : prims)
   {
-    stats.tris += p.indices.size();
+    stats.tris += static_cast<uint32_t>(p.indices.size());
   }
   stats.tris /= 3;
   camera.update(1.0f);
@@ -1530,7 +1530,7 @@ void App::recordCommandBuffer(uint32_t imageIndex)
       nullptr
     );
     commandBuffers[currentFrame].drawIndexed(
-      p.indices.size(),
+      static_cast<uint32_t>(p.indices.size()),
       1, 0, 0, 0
     );
   }

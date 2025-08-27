@@ -65,11 +65,11 @@ constexpr bool enableValidationLayers = true;
 
 // stores measurements data
 struct EngineStats {
-  long int frametime = 0L;
+  long long int frametime = 0L;
   uint32_t tris = 0U;
   uint32_t drawcalls = 0U;
-  long int sceneUpdateTime = 0L;
-  long int meshDrawTime = 0L;
+  long long int sceneUpdateTime = 0L;
+  long long int meshDrawTime = 0L;
 };
 
 struct Vertex {

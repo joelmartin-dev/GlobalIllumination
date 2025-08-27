@@ -135,12 +135,12 @@
   <ItemGroup>
     <Library Include="lib\Windows\glfw3.lib" />
     <Library Include="lib\Windows\volk.lib" />
-    <Library Include="lib\Windows\ktx_read.lib" />
     <Library Include="lib\Windows\ktx.lib" />
+    <Library Include="lib\Windows\ktx_read.lib" />
   </ItemGroup>
   <ItemGroup>
+    <None Include="lib\Windows\volk.pdb" />
     <None Include="lib\Windows\ktx.pdb" />
     <None Include="lib\Windows\ktx_read.pdb" />
-    <None Include="lib\Windows\volk.pdb" />
   </ItemGroup>
 </Project>
