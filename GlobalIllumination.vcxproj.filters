@@ -133,10 +133,10 @@
     </ClInclude>
   </ItemGroup>
   <ItemGroup>
-    <Library Include="lib\Windows\glfw3.lib" />
     <Library Include="lib\Windows\volk.lib" />
     <Library Include="lib\Windows\ktx.lib" />
     <Library Include="lib\Windows\ktx_read.lib" />
+    <Library Include="lib\Windows\glfw3.lib" />
   </ItemGroup>
   <ItemGroup>
     <None Include="lib\Windows\volk.pdb" />

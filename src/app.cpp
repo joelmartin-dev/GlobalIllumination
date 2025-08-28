@@ -35,6 +35,7 @@ static std::vector<char> readFile(const std::string& fileName)
 #include <stdexcept>
 #include <vector>
 #include <algorithm>
+#include <execution>
 #include <chrono>
 #include <memory>
 
@@ -103,8 +104,8 @@ void App::initVulkan()
   createGraphicsPipeline();
   createCommandPool();
   createDepthResources();
-  loadAsset(static_cast<std::filesystem::path>(MODEL_PATH));
-  loadTextures(static_cast<std::filesystem::path>(MODEL_PATH));
+  loadAsset(static_cast<std::filesystem::path>(model_path));
+  loadTextures(static_cast<std::filesystem::path>(model_path));
   createTextureSampler();
   loadGeometry();
   createVertexBuffer();
@@ -436,7 +437,7 @@ void App::createDescriptorSetLayout()
 
 void App::createGraphicsPipeline()
 {
-  auto shaderModule = createShaderModule(readFile(SHADER_PATH));
+  auto shaderModule = createShaderModule(readFile(shader_path));
   
   vk::PipelineShaderStageCreateInfo vertShaderModuleCreateInfo {
     .stage = vk::ShaderStageFlagBits::eVertex,
@@ -726,22 +727,26 @@ void App::loadTextures(std::filesystem::path path)
   textureImages.clear();
   textureImagesMemory.clear();
   textureImageViews.clear();
+
+  //std::for_each(std::execution::par, asset.materials.begin(), asset.materials.end(), [&](auto& material)
   for (auto& material : asset.materials)
   {
     fastgltf::Image image = asset.images[asset.textures[material.pbrData.baseColorTexture->textureIndex].imageIndex.value()];
-    std::visit(fastgltf::visitor {
-      [](auto& args) { (void)args; },
-      [&](fastgltf::sources::URI& filePath)
-      {
-        const std::string texturePath = path.parent_path().append(filePath.uri.path().begin(), filePath.uri.path().end()).string();
-        createTextureImage(texturePath.c_str());
-      }
-    },
-    image.data);
+    std::visit(
+      fastgltf::visitor { [](auto& args) { (void)args; }, [&](fastgltf::sources::URI& filePath)
+        {
+            const std::string texturePath = path.parent_path().append(filePath.uri.path().begin(), filePath.uri.path().end()).string();
+            auto image = createTextureImage(texturePath.c_str());
+            textureImages.emplace_back(std::move(image.first));
+            textureImagesMemory.emplace_back(std::move(image.second));
+        }
+      },
+      image.data);
   }
+  //);
 }
 
-void App::createTextureImage(const char* texturePath)
+[[nodiscard]] std::pair<vk::raii::Image, vk::raii::DeviceMemory> App::createTextureImage(const char* texturePath)
 {
   ktxTexture2* kTexture;
   auto result = ktxTexture2_CreateFromNamedFile(texturePath, KTX_TEXTURE_CREATE_LOAD_IMAGE_DATA_BIT, &kTexture);
@@ -774,21 +779,22 @@ void App::createTextureImage(const char* texturePath)
   memcpy(data, ktxTextureData, imageSize);
   stagingBufferMemory.unmapMemory();
   
-  vk::raii::Image tempImage = nullptr;
-  vk::raii::DeviceMemory tempMemory = nullptr;
+  vk::raii::Image textureImage = nullptr;
+  vk::raii::DeviceMemory textureImageMemory = nullptr;
   
-  createImage(texWidth, texHeight, mipLevels, textureFormat, vk::ImageTiling::eOptimal, vk::ImageUsageFlagBits::eTransferDst | vk::ImageUsageFlagBits::eSampled, vk::MemoryPropertyFlagBits::eDeviceLocal, tempImage, tempMemory);
+  createImage(texWidth, texHeight, mipLevels, textureFormat, vk::ImageTiling::eOptimal, vk::ImageUsageFlagBits::eTransferDst | vk::ImageUsageFlagBits::eSampled, vk::MemoryPropertyFlagBits::eDeviceLocal, textureImage, textureImageMemory);
   
-  textureImages.emplace_back(std::move(tempImage));
-  textureImagesMemory.emplace_back(std::move(tempMemory));
+  //textureImages.emplace_back(std::move(tempImage));
+  //textureImagesMemory.emplace_back(std::move(tempMemory));
   
-  transitionImageLayout(textureImages.back(), vk::ImageLayout::eUndefined, vk::ImageLayout::eTransferDstOptimal, mipLevels);
-  copyBufferToImage(stagingBuffer, textureImages.back(), texWidth, texHeight, mipLevels, kTexture);
-  transitionImageLayout(textureImages.back(), vk::ImageLayout::eTransferDstOptimal, vk::ImageLayout::eShaderReadOnlyOptimal, mipLevels);
+  transitionImageLayout(textureImage, vk::ImageLayout::eUndefined, vk::ImageLayout::eTransferDstOptimal, mipLevels);
+  copyBufferToImage(stagingBuffer, textureImage, texWidth, texHeight, mipLevels, kTexture);
+  transitionImageLayout(textureImage, vk::ImageLayout::eTransferDstOptimal, vk::ImageLayout::eShaderReadOnlyOptimal, mipLevels);
   
   ktxTexture2_Destroy(kTexture);
   
-  createTextureImageView(textureImages.back(), textureFormat, mipLevels);
+  createTextureImageView(textureImage, textureFormat, mipLevels);
+  return std::make_pair(std::move(textureImage), std::move(textureImageMemory));
 }
 
 void App::createBuffer(
@@ -1294,6 +1300,18 @@ void App::mainLoop()
   while (glfwWindowShouldClose(pWindow) != GLFW_TRUE)
   {
     glfwPollEvents();
+    if (framebufferResized)
+    {
+        framebufferResized = false;
+        recreateSwapChain();
+    }
+
+    if (hotReload)
+    {
+        hotReload = false;
+        reloadShaders();
+    }
+
     glfwGetCursorPos(pWindow, &xpos, &ypos);
     
     camera.update((float)stats.frametime / deltaMultiplier);
@@ -1308,7 +1326,7 @@ void App::mainLoop()
 
     {
       ImGui::Begin("Delta Frametime", &showWindow, ImGuiWindowFlags_AlwaysAutoResize);
-      ImGui::Text("%lius", stats.frametime);
+      ImGui::Text("%llius", stats.frametime);
       ImGui::Text("%i tris", stats.tris);
       ImGui::Spacing();
       ImGui::SliderFloat("Cam X", &camera.position.x, -3.0f, 3.0f);
@@ -1323,6 +1341,9 @@ void App::mainLoop()
       ImGui::Spacing();
       ImGui::SliderFloat("Shift Speed", &camera.shiftSpeed, 0.01f, 4.0f);
       ImGui::InputFloat("Delta Mult", &deltaMultiplier);
+      ImGui::Spacing();
+      ImGui::InputText("Model Path", model_path, IM_ARRAYSIZE(model_path));
+      ImGui::InputText("Shader Path", shader_path, IM_ARRAYSIZE(shader_path));
       ImGui::End();
     }
 
@@ -1336,6 +1357,39 @@ void App::mainLoop()
   device.waitIdle();
 }
 
+void App::recreateSwapChain()
+{
+    int width, height;
+    glfwGetFramebufferSize(pWindow, &width, &height);
+    while (width == 0 || height == 0)
+    {
+        glfwGetFramebufferSize(pWindow, &width, &height);
+        glfwWaitEvents();
+    }
+
+    device.waitIdle();
+
+    cleanupSwapChain();
+
+    createSwapChain();
+    createSwapChainImageViews();
+    createDepthResources();
+}
+
+void App::cleanupSwapChain()
+{
+    swapChainImageViews.clear();
+    swapChain = nullptr;
+}
+
+void App::reloadShaders()
+{
+    device.waitIdle();
+    pipelineLayout = nullptr;
+    graphicsPipeline = nullptr;
+    createGraphicsPipeline();
+}
+
 void App::drawFrame()
 {
   while (vk::Result::eTimeout == device.waitForFences(*inFlightFences[currentFrame], vk::True, UINT64_MAX))
@@ -1343,8 +1397,9 @@ void App::drawFrame()
   
   auto [result, imageIndex] = swapChain.acquireNextImage(UINT64_MAX, *presentCompleteSemaphores[semaphoreIndex], nullptr);
 
-  if (result == vk::Result::eErrorOutOfDateKHR)
+  if (result == vk::Result::eErrorOutOfDateKHR || framebufferResized)
   {
+    framebufferResized = false;
     recreateSwapChain();
     return;
   } 
@@ -1383,9 +1438,9 @@ void App::drawFrame()
   };
 
   result = queue.presentKHR(presentInfo);
-  if (result == vk::Result::eErrorOutOfDateKHR || result == vk::Result::eSuboptimalKHR || frameBufferResized)
+  if (result == vk::Result::eErrorOutOfDateKHR || result == vk::Result::eSuboptimalKHR || framebufferResized)
   {
-    frameBufferResized = false;
+    framebufferResized = false;
     recreateSwapChain();
   }
   else if (result != vk::Result::eSuccess)
@@ -1395,31 +1450,6 @@ void App::drawFrame()
 
   semaphoreIndex = (semaphoreIndex + 1) % presentCompleteSemaphores.size();
   currentFrame = (currentFrame + 1) % MAX_FRAMES_IN_FLIGHT;
-}
-
-void App::recreateSwapChain()
-{
-  int width, height;
-  glfwGetFramebufferSize(pWindow, &width, &height);
-  while (width == 0 || height == 0)
-  {
-    glfwGetFramebufferSize(pWindow, &width, &height);
-    glfwWaitEvents();
-  }
-
-  device.waitIdle();
-
-  cleanupSwapChain();
-
-  createSwapChain();
-  createSwapChainImageViews();
-  createDepthResources();
-}
-
-void App::cleanupSwapChain()
-{
-  swapChainImageViews.clear();
-  swapChain = nullptr;
 }
 
 void App::updateModelViewProjection(uint32_t imageIndex)

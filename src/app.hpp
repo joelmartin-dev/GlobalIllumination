@@ -18,7 +18,7 @@
 
 //#include <vulkan/vulkan_profiles.hpp> // provided profiles not compatible with some target hardware
 
-#define GLFW_INCLUDE_NONE
+#define GLFW_INCLUDE_VULKAN
 #include <GLFW/glfw3.h> // for callback declarations, pWindow member
 
 // OpenGL Mathematics: for linear algebra functions
@@ -43,14 +43,18 @@ constexpr uint32_t HEIGHT = 600;
 constexpr uint32_t MAX_FRAMES_IN_FLIGHT = 2;
 
 // path to gltf, can be defined through compile-line preprocessor
-#ifndef MODEL_PATH
-#define MODEL_PATH ""
-#endif
+//#ifndef MODEL_PATH
+//#define MODEL_PATH "../assets/sponza/Sponza.gltf"
+//#endif
+
+static char model_path[256] = "../assets/sponza/Sponza.gltf";
 
 // path to spv, can be defined through compile-line preprocessor
-#ifndef SHADER_PATH
-#define SHADER_PATH "../assets/shaders/shader.spv"
-#endif
+//#ifndef SHADER_PATH
+//#define SHADER_PATH "../assets/shaders/shader.spv"
+//#endif
+
+static char shader_path[256] = "../assets/shaders/shader.spv";
 
 // not array, implicit typing and contents are immutable
 const std::vector validationLayers = {
@@ -61,6 +65,7 @@ const std::vector validationLayers = {
 constexpr bool enableValidationLayers = false;
 #else
 constexpr bool enableValidationLayers = true;
+#pragma comment(linker, "/SUBSYSTEM:CONSOLE")
 #endif
 
 // stores measurements data
@@ -154,7 +159,8 @@ struct MeshData {
 };
 
 static Camera camera = {};
-static bool frameBufferResized = false;
+static bool framebufferResized = false;
+static bool hotReload = false;
 
 class App
 {
@@ -282,7 +288,7 @@ class App
   ) const;
   void loadAsset(std::filesystem::path path);
   void loadTextures(std::filesystem::path path);
-  void createTextureImage(const char* texturePath);
+  [[nodiscard]] std::pair<vk::raii::Image, vk::raii::DeviceMemory> createTextureImage(const char* texturePath);
   void createBuffer(
     vk::DeviceSize size,
     vk::BufferUsageFlags usage,
@@ -325,9 +331,10 @@ class App
   void initImGui();
   
   void mainLoop();
-  void drawFrame();
   void recreateSwapChain();
   void cleanupSwapChain();
+  void reloadShaders();
+  void drawFrame();
   void updateModelViewProjection(uint32_t imageIndex);
   void transitionImageLayout(
     uint32_t imageIndex,
@@ -345,6 +352,10 @@ class App
   static void key_callback(GLFWwindow* _pWindow, int key, int scancode, int action, int mods)
   {
     camera.key_callback(_pWindow, key, scancode, action, mods);
+    if (action == GLFW_PRESS && key == GLFW_KEY_R)
+    {
+        hotReload = true;
+    }
   }
   
   static void cursor_pos_callback(GLFWwindow* _pWindow, double xpos, double ypos)
@@ -357,7 +368,7 @@ class App
   
   static void framebufferResizeCallback(GLFWwindow* _pWindow, int width, int height)
   {
-    frameBufferResized = true;
+    framebufferResized = true;
   }
 };
 

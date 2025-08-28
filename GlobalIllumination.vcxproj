@@ -1,4 +1,4 @@
-<?xml version="1.0" encoding="utf-8"?>
+﻿<?xml version="1.0" encoding="utf-8"?>
 <Project DefaultTargets="Build" xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
   <ItemGroup Label="ProjectConfigurations">
     <ProjectConfiguration Include="Debug|Win32">
@@ -92,8 +92,8 @@
       <WarningLevel>Level3</WarningLevel>
       <LanguageStandard>stdcpp20</LanguageStandard>
       <LanguageStandard_C>stdc17</LanguageStandard_C>
-      <AdditionalIncludeDirectories>$(SolutionDir)deps;$(SolutionDir)include;$(VULKAN_SDK)\include</AdditionalIncludeDirectories>
-      <PreprocessorDefinitions>GLM_FORCE_CXX20;KHRONOS_STATIC;IMGUI_IMPL_VULKAN_USE_VOLK;SHADER_PATH="$(SolutionDir.replace('\', '\\'))assets\\shaders\\shader.spv";MODEL_PATH="$(SolutionDir.replace('\','\\'))assets\\sponza\\Sponza.gltf";VULKAN_HPP_NO_STRUCT_CONSTRUCTORS;_DEBUG;WINDOWS;</PreprocessorDefinitions>
+      <AdditionalIncludeDirectories>$(SolutionDir)deps;$(SolutionDir)include;$(VULKAN_SDK)\include\</AdditionalIncludeDirectories>
+      <PreprocessorDefinitions>GLM_FORCE_CXX20;KHRONOS_STATIC;IMGUI_IMPL_VULKAN_USE_VOLK;VULKAN_HPP_NO_STRUCT_CONSTRUCTORS;_DEBUG;WINDOWS</PreprocessorDefinitions>
     </ClCompile>
     <Link>
       <GenerateDebugInformation>true</GenerateDebugInformation>
@@ -181,6 +181,9 @@
     <Library Include="lib\Windows\volk.lib" />
   </ItemGroup>
   <ItemGroup>
+    <None Include="..\..\..\..\Downloads\main_sponza\main_sponza\NewSponza_Main_glTF_003.gltf" />
+    <None Include="assets\shaders\shader.slang" />
+    <None Include="assets\sponza\Sponza.gltf" />
     <None Include="lib\Windows\ktx.pdb" />
     <None Include="lib\Windows\ktx_read.pdb" />
     <None Include="lib\Windows\volk.pdb" />
