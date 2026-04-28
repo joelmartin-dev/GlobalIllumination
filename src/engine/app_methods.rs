@@ -95,6 +95,7 @@ impl ApplicationHandler for App {
             Err(e) => println!("{}", e.to_string()),
             _ => println!("Loaded: {:?}", path)
           };
+          self.window.as_ref().unwrap().request_redraw();
         }
         _ => ()
       }

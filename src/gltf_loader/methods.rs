@@ -3,10 +3,10 @@ use std::{any::{type_name}, fs, path::PathBuf};
 use pct_str::{PctString, UriReserved};
 use serde::{Deserialize, Deserializer, Serializer, de::Error};
 
-use crate::gltf_loader::{GltfLoader, Validatable, enums::{MeshPrimitiveMode, Undefinable}};
+use crate::gltf_loader::{GltfLoader, Validatable, enums::{MeshPrimitiveMode, Undefinable}, error::GltfError};
 
 impl GltfLoader {
-  pub fn load(path: &PathBuf) -> anyhow::Result<Self> {
+  pub fn load(path: &PathBuf) -> anyhow::Result<(Self, Vec<Vec<u8>>)> {
     let parsed: Result<GltfLoader, serde_json::Error> = serde_json::from_str(&fs::read_to_string(path).unwrap());
 
     if let Ok(loaded) = parsed {
@@ -22,7 +22,7 @@ impl GltfLoader {
       
       if let Some(buffers)      = &loaded.buffers       
         { buffers     .iter().try_for_each(|buffer|       buffer      .is_valid(&loaded))? };
-      
+
       if let Some(buffer_views) = &loaded.buffer_views  
         { buffer_views.iter().try_for_each(|buffer_view|  buffer_view .is_valid(&loaded))? };
       
@@ -53,7 +53,22 @@ impl GltfLoader {
       if let Some(textures)     = &loaded.textures      
         { textures    .iter().try_for_each(|texture|      texture     .is_valid(&loaded))? };
       
-      Ok(loaded)
+      let mut loaded_buffers: Vec<Vec<u8>> = Vec::new();
+      let parent_path = match path.parent() { Some(v) => v, None => Err(GltfError::from("failed to get parent path!"))? };
+      if let Some(buffers)      = &loaded.buffers
+        {
+          buffers.iter().for_each(|buffer| 
+            { 
+              if let Some(uri) = &buffer.uri {
+                if let Ok(bytes_vec) = fs::read(parent_path.join(uri)) {
+                  loaded_buffers.push(bytes_vec.clone());
+                }
+              }
+          }
+          );
+        };
+
+      Ok((loaded, loaded_buffers))
     }
     else {
       Err(parsed.unwrap_err().into())

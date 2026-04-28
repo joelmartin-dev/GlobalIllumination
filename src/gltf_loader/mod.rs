@@ -1,4 +1,4 @@
-mod enums;
+pub mod enums;
 mod methods;
 mod test;
 pub mod error;

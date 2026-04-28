@@ -16,6 +16,8 @@ use crate::engine::{
   SHADER_ROOT_PATH, VALIDATION_LAYERS, VertexData
 };
 use crate::camera::Camera;
+use crate::gltf_loader::Accessor;
+use crate::gltf_loader::enums::{AccessorType, ComponentType, MaterialAlphaMode};
 use crate::gltf_loader::{GltfLoader, error::GltfError};
 use crate::model::CUBE;
 use crate::vertex::Vertex;
@@ -2423,20 +2425,215 @@ impl Engine
     };
   }
 
+  fn component_size(component_type: ComponentType) -> anyhow::Result<usize> 
+  {
+    match component_type {
+      ComponentType::Byte => Ok(size_of::<i8>()),
+      ComponentType::UnsignedByte => Ok(size_of::<u8>()),
+      ComponentType::Short => Ok(size_of::<i16>()),
+      ComponentType::UnsignedShort => Ok(size_of::<u16>()),
+      ComponentType::UnsignedInt => Ok(size_of::<u32>()),
+      ComponentType::Float => Ok(size_of::<f32>()),
+      _ => Err(GltfError::from("Unsupported component type!"))?
+    }
+  }
+
+  fn num_components(accessor_type: AccessorType) -> anyhow::Result<usize>
+  {
+    match accessor_type {
+      AccessorType::Scalar => Ok(1),
+      AccessorType::Vec2 => Ok(2),
+      AccessorType::Vec3 => Ok(3),
+      AccessorType::Vec4 => Ok(4),
+      AccessorType::Mat2 => Ok(4),
+      AccessorType::Mat3 => Ok(9),
+      AccessorType::Mat4 => Ok(16),
+      _ => Err(GltfError::from("Unsupported accessor type!"))?
+    }
+  }
+
+  fn dequantize_value(bytes: &[u8], component_type: ComponentType, normalized: bool) -> anyhow::Result<f32>
+  {
+    match component_type {
+      ComponentType::Byte => {
+        let val = i8::from_le_bytes(bytes.try_into().unwrap());
+        if normalized { Ok((val as f32 / 127.0).max(-1.0)) } else { Ok(val as f32) }
+      },
+      ComponentType::UnsignedByte => {
+        let val = u8::from_le_bytes(bytes.try_into().unwrap());
+        if normalized { Ok(val as f32 / 255.0) } else { Ok(val as f32) }
+      },
+      ComponentType::Short => {
+        let val = i16::from_le_bytes(bytes.try_into().unwrap());
+        if normalized { Ok((val as f32 / 32767.0).max(-1.0)) } else { Ok(val as f32) }
+      },
+      ComponentType::UnsignedShort => {
+        let val = u16::from_le_bytes(bytes.try_into().unwrap());
+        if normalized { Ok(val as f32 / 65535.0) } else { Ok(val as f32) }
+      },
+      ComponentType::Float => {
+        Ok(f32::from_le_bytes(bytes.try_into().unwrap()))
+      },
+      _ => Err(GltfError::from(format!("unsupported component type: {:?}!", component_type)))?
+    }
+  }
+
+  fn parse_accessor(base: &GltfLoader, bin: &Vec<Vec<u8>>, accessor: &Accessor) -> anyhow::Result<Vec<f32>>
+  {
+    let accessor_type = accessor.ty;
+    let component_type = accessor.component_type;
+    let accessor_count = accessor.count as usize;
+    let accessor_offset = accessor.byte_offset.unwrap() as usize;
+    let num_comps = Self::num_components(accessor_type)?;
+    let comp_size = Self::component_size(component_type)?;
+    let element_size = num_comps * comp_size;
+    let buffer_view = if accessor.buffer_view.is_some() { &base.buffer_views.as_ref().unwrap()[accessor.buffer_view.unwrap() as usize] } 
+                      else { panic!("no buffer view!") };
+    let stride = if buffer_view.byte_stride.is_some() { buffer_view.byte_stride.unwrap() as usize } else { element_size };
+    let buffer_view_offset = buffer_view.byte_offset.unwrap() as usize;
+    let buffer_data = &bin[buffer_view.buffer as usize];
+    let normalized = accessor.normalized;
+      
+    let mut result = Vec::with_capacity(accessor_count * num_comps);
+    
+    for i in 0..accessor_count {
+      let base_offset = buffer_view_offset + accessor_offset + i * stride;
+      for j in 0..num_comps {
+        let offset = base_offset + j * comp_size;
+        let bytes = &buffer_data[offset..offset + comp_size];
+        let value = Self::dequantize_value(bytes, component_type, normalized)?;
+        result.push(value);
+      }
+    }
+    
+    return Ok(result);
+  }
+
   pub fn load_gltf(&mut self, path: &PathBuf) -> anyhow::Result<()>
   {
-    let base: GltfLoader = GltfLoader::load(path)?;
+    let (base, bin) = GltfLoader::load(path)?;
     if let Some(context) = &self.context {
       unsafe { match context.device.queue_wait_idle(context.queue) { Err(e) => Err(e)?, _ => ()} };
     };
-    if let Some(buffers) = &base.buffers {
-      if let Some(uri) = &buffers[0].uri {
-        let buffer: Vec<u8> = match fs::read(match path.parent() 
-          { Some(v) => v, None => Err(GltfError::from(format!("failed to get parent path of {:?}", path)))?}.join(uri))
-            { Ok(v) => v, Err(e) => Err(e)? };
-      }
+    if let Some(meshes) = &base.meshes {
+      let mut vertices: Vec<Vertex> = vec![];
+      let mut indices: Vec<u32> = vec![];
+      let mut submeshes: Vec<SubMesh> = vec![];
 
-    }
+      let mut index_offset: u32 = indices.len().try_into().unwrap();
+
+      let prim = &meshes[0].primitives[0];
+      let start_offset: u32 = index_offset;
+        // v_offset will help in evaluating the absolute value of this primitives indices so they match up with the
+        // correct vertices in the vertex buffer
+        let v_offset: u32 = vertices.len() as u32;
+        // Get the accessor for where the primitive stores its indices
+        let index_accessor = &base.accessors.as_ref().unwrap()[prim.indices.unwrap() as usize];
+        let index_accessor_byte_offset = index_accessor.byte_offset.unwrap() as usize;
+        let index_component_type = index_accessor.component_type;
+        let index_buffer_byte_length = index_accessor.count as usize * match index_component_type {
+          ComponentType::UnsignedByte => { size_of::<u8>() },
+          ComponentType::UnsignedShort => { size_of::<u16>() },
+          ComponentType::UnsignedInt => { size_of::<u32>() }
+          _ => panic!("incompatible component type")
+        };
+        let index_buffer_view = &base.buffer_views.as_ref().unwrap()[index_accessor.buffer_view.unwrap() as usize];
+        let index_buffer_byte_offset = index_buffer_view.byte_offset.unwrap() as usize + index_accessor_byte_offset;
+        let index_buffer = &bin[index_buffer_view.buffer as usize]
+          [index_buffer_byte_offset..index_buffer_byte_offset+index_buffer_byte_length];
+
+        let prim_indices: Vec<u32> = match index_component_type {
+          ComponentType::UnsignedByte => {
+            index_buffer.chunks_exact(size_of::<u8>()).map(|chunk| 
+              (u8::from_le_bytes(chunk.try_into().unwrap()) as u32) + v_offset).collect()
+          },
+          ComponentType::UnsignedShort => {
+            index_buffer.chunks_exact(size_of::<u16>()).map(|chunk| 
+              (u16::from_le_bytes(chunk.try_into().unwrap()) as u32) + v_offset).collect()
+          },
+          ComponentType::UnsignedInt => {
+            index_buffer.chunks_exact(size_of::<u32>()).map(|chunk| 
+              u32::from_le_bytes(chunk.try_into().unwrap()) + v_offset).collect()
+          },
+          _ => { panic!("incompatible indices component type!") }
+        };        
+
+        indices.extend(&prim_indices);
+        // Insert the indices in reverse order if the material is double-sided (triggers a redraw of the backface as a 
+        // frontface, using a reverse iterator and offsets from rbegin (which is the end in the direction of begin)
+        if base.materials.as_ref().unwrap()[prim.material.unwrap() as usize].double_sided {
+          let reversed_indices = prim_indices.iter().rev();
+          indices.extend(reversed_indices);
+        }
+        index_offset = indices.len().try_into().unwrap();
+
+        let mat_idx = prim.material.expect("failed to find material!") as usize;
+
+        let pos_accessor = &base.accessors.as_ref().unwrap()[*prim.attributes.get(&String::from("POSITION")).unwrap() as usize];
+        let positions: Vec<glm::Vec3> = Self::parse_accessor(&base, &bin, &pos_accessor)?.chunks_exact(3)
+        .map(|chunk| glm::make_vec3(&chunk)).collect();
+
+        // let uv_accessor = &base.accessors.as_ref().unwrap()[*prim.attributes.get(&String::from("TEXCOORD_0")).unwrap() as usize];
+        // let uvs: Vec<glm::Vec2> = Self::parse_accessor(&base, &bin, &uv_accessor)?.chunks_exact(2)
+        //   .map(|chunk| glm::make_vec2(&chunk)).collect();
+        let uvs: Vec<glm::Vec2> = vec![glm::vec2(0.0, 0.0); positions.len()];
+
+        let norms_accessor = &base.accessors.as_ref().unwrap()[*prim.attributes.get(&String::from("NORMAL")).unwrap() as usize];
+        let norms: Vec<glm::Vec3> = Self::parse_accessor(&base, &bin, &norms_accessor)?.chunks_exact(3)
+          .map(|chunk| glm::make_vec3(&chunk)).collect();
+
+        let colour = 
+          glm::make_vec3(&base.materials.as_ref().unwrap()[mat_idx].pbr_metallic_roughness.as_ref().unwrap().base_color_factor[0..3]);
+
+        // Get the model's scale
+        // let translation: glm::Vec3 = glm::make_vec3(&node.translation.unwrap_or([0.0;3]));
+        // let rotation = node.rotation.unwrap_or([0.0, 0.0, 0.0, 1.0]);
+        // let scale: glm::Vec3 = glm::make_vec3(&node.scale.unwrap_or([1.0;3]));
+
+        // let translate_mat = glm::translate(&glm::Mat4::identity(), &translation);
+        // let rotate_mat = glm::quat_to_mat4(&glm::make_quat(&rotation));
+        // let scale_mat = glm::scale(&glm::Mat4::identity(), &scale);
+
+        // let transform_mat = translate_mat * rotate_mat * scale_mat;
+        let transform_mat = glm::Mat4::identity();
+
+        // Instantiate new default vertices
+        vertices.reserve(positions.len());
+        for i in 0..positions.len() {
+          let homogenous_pos = glm::vec4(positions[i].x, positions[i].y, positions[i].z, 1.0);
+          let transformed_pos = transform_mat * homogenous_pos;
+          vertices.push(Vertex {
+            pos: glm::vec3(transformed_pos.x, transformed_pos.y, transformed_pos.z),
+            tex_coord: uvs[i],
+            colour: colour,
+            norm: norms[i]
+          });
+        }
+
+        submeshes.push( SubMesh {
+          index_offset: start_offset,
+          index_count: index_offset - start_offset,
+          material_id: mat_idx as u32,
+          first_vertex: 0,
+          max_vertex: vertices.len() as u32,
+          alpha_cut: (base.materials.as_ref().unwrap()[mat_idx].alpha_mode != MaterialAlphaMode::Opaque).try_into().unwrap(),
+        });
+
+        self.vertices = vertices;
+        self.indices = indices;
+        self.submeshes = submeshes;
+
+        let context = self.context.as_mut().unwrap();
+        let vertex_buffer = Self::create_vertex_buffer(&context, &self.vertices);
+        
+        let index_buffer = Self::create_index_buffer(&context, &self.indices, vk::BufferUsageFlags::STORAGE_BUFFER);
+        
+        let colour_buffer = Self::create_colour_buffer(&context, &self.vertices);
+        let uv_buffer = Self::create_uv_buffer(&context, &self.vertices);
+        let nrm_buffer = Self::create_normal_buffer(&context, &self.vertices);
+
+        self.vertex_data = VertexData { vertex_buffer, index_buffer, colour_buffer, uv_buffer, nrm_buffer };
+    };
     Ok(())
   }
 }
