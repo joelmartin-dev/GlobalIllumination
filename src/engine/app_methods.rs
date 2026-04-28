@@ -92,7 +92,7 @@ impl ApplicationHandler for App {
         },
         WindowEvent::DroppedFile(path) => {
           match engine.load_gltf(&path) {
-            Err(e) => println!("{}", e),
+            Err(e) => println!("{}", e.to_string()),
             _ => println!("Loaded: {:?}", path)
           };
         }

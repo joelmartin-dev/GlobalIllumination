@@ -6,7 +6,7 @@ use serde::{Deserialize, Deserializer, Serializer, de::Error};
 use crate::gltf_loader::{GltfLoader, Validatable, enums::{MeshPrimitiveMode, Undefinable}};
 
 impl GltfLoader {
-  pub fn load(path: &PathBuf) -> Result<Self, String> {
+  pub fn load(path: &PathBuf) -> anyhow::Result<Self> {
     let parsed: Result<GltfLoader, serde_json::Error> = serde_json::from_str(&fs::read_to_string(path).unwrap());
 
     if let Ok(loaded) = parsed {
@@ -56,7 +56,7 @@ impl GltfLoader {
       Ok(loaded)
     }
     else {
-      Err(parsed.unwrap_err().to_string())
+      Err(parsed.unwrap_err().into())
     }
   }
 }

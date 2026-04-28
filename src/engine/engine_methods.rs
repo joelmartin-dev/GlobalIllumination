@@ -1,4 +1,6 @@
+use std::error::Error;
 use std::ffi::{CStr, CString, c_void};
+use std::fmt::{Debug, Display};
 use std::fs::{self, File};
 use std::io::{Write};
 use std::path::{Path, PathBuf};
@@ -14,7 +16,7 @@ use crate::engine::{
   SHADER_ROOT_PATH, VALIDATION_LAYERS, VertexData
 };
 use crate::camera::Camera;
-use crate::gltf_loader::GltfLoader;
+use crate::gltf_loader::{GltfLoader, error::GltfError};
 use crate::model::CUBE;
 use crate::vertex::Vertex;
 use ash::util::Align;
@@ -2421,12 +2423,20 @@ impl Engine
     };
   }
 
-  pub fn load_gltf(&mut self, path: &PathBuf) -> Result<(), String>
+  pub fn load_gltf(&mut self, path: &PathBuf) -> anyhow::Result<()>
   {
     let base: GltfLoader = GltfLoader::load(path)?;
     if let Some(context) = &self.context {
-      unsafe { context.device.queue_wait_idle(context.queue) };
+      unsafe { match context.device.queue_wait_idle(context.queue) { Err(e) => Err(e)?, _ => ()} };
     };
+    if let Some(buffers) = &base.buffers {
+      if let Some(uri) = &buffers[0].uri {
+        let buffer: Vec<u8> = match fs::read(match path.parent() 
+          { Some(v) => v, None => Err(GltfError::from(format!("failed to get parent path of {:?}", path)))?}.join(uri))
+            { Ok(v) => v, Err(e) => Err(e)? };
+      }
+
+    }
     Ok(())
   }
 }
