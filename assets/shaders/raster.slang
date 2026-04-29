@@ -34,8 +34,8 @@ struct PushConstant {
 [shader("fragment")]
 float4 fragMain(VSOutput vertIn) : SV_TARGET {
     float4 textureColour = textures[pc.materialID].Sample(textureSampler, vertIn.fragTexCoord);
-    return textureColour * float4(vertIn.fragColor, 1.0f);
-    // return float4(vertIn.fragTexCoord, 0.0f, 1.0f);
+    // return textureColour * float4(vertIn.fragColor, 1.0f);
+    return float4(vertIn.fragTexCoord, 0.0f, 1.0f);
 }
 
 [shader("compute")]

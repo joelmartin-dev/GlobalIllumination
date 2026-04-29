@@ -3,11 +3,11 @@ use std::{any::{type_name}, fs, path::PathBuf};
 use pct_str::{PctString, UriReserved};
 use serde::{Deserialize, Deserializer, Serializer, de::Error};
 
-use crate::gltf_loader::{GltfLoader, Validatable, enums::{MeshPrimitiveMode, Undefinable}, error::GltfError};
+use crate::gltf_loader::{GltfDocument, Validatable, enums::{MeshPrimitiveMode, Undefinable}, error::GltfError};
 
-impl GltfLoader {
+impl GltfDocument {
   pub fn load(path: &PathBuf) -> anyhow::Result<(Self, Vec<Vec<u8>>)> {
-    let parsed: Result<GltfLoader, serde_json::Error> = serde_json::from_str(&fs::read_to_string(path).unwrap());
+    let parsed: Result<GltfDocument, serde_json::Error> = serde_json::from_str(&fs::read_to_string(path)?);
 
     if let Ok(loaded) = parsed {
       loaded.is_valid(&loaded)?;
@@ -57,15 +57,17 @@ impl GltfLoader {
       let parent_path = match path.parent() { Some(v) => v, None => Err(GltfError::from("failed to get parent path!"))? };
       if let Some(buffers)      = &loaded.buffers
         {
-          buffers.iter().for_each(|buffer| 
+          buffers.iter().try_for_each(|buffer| 
             { 
               if let Some(uri) = &buffer.uri {
-                if let Ok(bytes_vec) = fs::read(parent_path.join(uri)) {
-                  loaded_buffers.push(bytes_vec.clone());
+                match fs::read(parent_path.join(uri)) {
+                  Ok(bytes_vec) => loaded_buffers.push(bytes_vec.clone()),
+                  Err(e) => { return Err(e) }
                 }
               }
+              return Ok(());
           }
-          );
+          )?;
         };
 
       Ok((loaded, loaded_buffers))
@@ -77,10 +79,10 @@ impl GltfLoader {
 }
 
 // #region Deserializers
-pub fn deserialize_from_i32_to_enum<'de, D, T>(deserializer: D) -> Result<T, D::Error>
-where D: Deserializer<'de>, T: From<i32> + Undefinable
+pub fn deserialize_from_usize_to_enum<'de, D, T>(deserializer: D) -> Result<T, D::Error>
+where D: Deserializer<'de>, T: From<usize> + Undefinable
 {
-  let val = i32::deserialize(deserializer)?;
+  let val = usize::deserialize(deserializer)?;
   match val {
     n if T::from(n).is_undefined() => {
       let type_name = type_name::<T>().split("::").last().unwrap_or("unknown");
@@ -90,10 +92,10 @@ where D: Deserializer<'de>, T: From<i32> + Undefinable
   }
 }
 
-pub fn deserialize_from_option_i32_to_enum<'de, D, T>(deserializer: D) -> Result<Option<T>, D::Error>
-where D: Deserializer<'de>, T: From<i32> + Undefinable
+pub fn deserialize_from_option_usize_to_enum<'de, D, T>(deserializer: D) -> Result<Option<T>, D::Error>
+where D: Deserializer<'de>, T: From<usize> + Undefinable
 {
-  let val = Option::<i32>::deserialize(deserializer)?;
+  let val = Option::<usize>::deserialize(deserializer)?;
   match val {
     Some(n) if T::from(n).is_undefined() => {
       let type_name = type_name::<T>().split("::").last().unwrap_or("unknown");
@@ -141,17 +143,17 @@ where D: Deserializer<'de>
 // #endregion
 
 // #region Serializers
-pub fn serialize_to_i32<S, T>(val: &T, serializer: S) -> Result<S::Ok, S::Error>
-where S: Serializer, T: Into<i32> + Copy
+pub fn serialize_to_u64<S, T>(val: &T, serializer: S) -> Result<S::Ok, S::Error>
+where S: Serializer, T: Into<u64> + Copy
 {
-  serializer.serialize_i32((*val).into())
+  serializer.serialize_u64((*val).into())
 }
 
-pub fn serialize_option_to_i32<S, T>(val: &Option<T>, serializer: S) -> Result<S::Ok, S::Error>
-where S: Serializer, T: Into<i32> + Copy
+pub fn serialize_option_to_u64<S, T>(val: &Option<T>, serializer: S) -> Result<S::Ok, S::Error>
+where S: Serializer, T: Into<u64> + Copy
 {
   match val {
-    Some(v) => serializer.serialize_i32((*v).into()),
+    Some(v) => serializer.serialize_u64((*v).into()),
     _ => serializer.serialize_none()
   }
 }

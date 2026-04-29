@@ -40,8 +40,8 @@ pub enum ComponentType {
   UnsignedInt = 5125, Float = 5126, 
   Undefined
 }
-impl From<i32> for ComponentType {
-  fn from(val: i32) -> Self {
+impl From<usize> for ComponentType {
+  fn from(val: usize) -> Self {
     match val {
       5120 => ComponentType::Byte, 5121 => ComponentType::UnsignedByte,
       5122 => ComponentType::Short, 5123 => ComponentType::UnsignedShort,
@@ -50,7 +50,17 @@ impl From<i32> for ComponentType {
     }
   }
 }
-impl From<ComponentType> for i32 {
+impl From<ComponentType> for usize {
+  fn from(val: ComponentType) -> Self {
+    match val {
+      ComponentType::Byte => 5120, ComponentType::UnsignedByte => 5121,
+      ComponentType::Short => 5122, ComponentType::UnsignedShort => 5123,
+      ComponentType::UnsignedInt => 5125, ComponentType::Float => 5126,
+      _ => 0
+    }
+  }
+}
+impl From<ComponentType> for u64 {
   fn from(val: ComponentType) -> Self {
     match val {
       ComponentType::Byte => 5120, ComponentType::UnsignedByte => 5121,
@@ -143,8 +153,8 @@ impl Undefinable for AnimationSamplerInterpolationType {
 pub enum BufferViewTarget {
   ArrayBuffer = 34962, ElementArrayBuffer = 34963, Undefined
 }
-impl From<i32> for BufferViewTarget {
-  fn from(val: i32) -> Self {
+impl From<usize> for BufferViewTarget {
+  fn from(val: usize) -> Self {
     match val {
       34962 => BufferViewTarget::ArrayBuffer,
       34963 => BufferViewTarget::ElementArrayBuffer,
@@ -152,7 +162,16 @@ impl From<i32> for BufferViewTarget {
     }
   }
 }
-impl From<BufferViewTarget> for i32 {
+impl From<BufferViewTarget> for usize {
+  fn from(val: BufferViewTarget) -> Self {
+    match val {
+      BufferViewTarget::ArrayBuffer => 34962,
+      BufferViewTarget::ElementArrayBuffer => 34963,
+      _ => 0
+    }
+  }
+}
+impl From<BufferViewTarget> for u64 {
   fn from(val: BufferViewTarget) -> Self {
     match val {
       BufferViewTarget::ArrayBuffer => 34962,
@@ -213,8 +232,8 @@ pub enum MeshPrimitiveMode {
   Triangles = 4, TriangleStrip = 5, TriangleFan = 6,
   Points = 0, Undefined = 7
 }
-impl From<i32> for MeshPrimitiveMode {
-  fn from(val: i32) -> Self {
+impl From<usize> for MeshPrimitiveMode {
+  fn from(val: usize) -> Self {
     match val {
       1 => MeshPrimitiveMode::Lines, 2 => MeshPrimitiveMode::LineLoop, 3 => MeshPrimitiveMode::LineStrip,
       4 => MeshPrimitiveMode::Triangles, 5 => MeshPrimitiveMode::TriangleStrip, 6 => MeshPrimitiveMode::TriangleFan,
@@ -222,7 +241,16 @@ impl From<i32> for MeshPrimitiveMode {
     }
   }
 }
-impl From<MeshPrimitiveMode> for i32 {
+impl From<MeshPrimitiveMode> for usize {
+  fn from(val: MeshPrimitiveMode) -> Self {
+    match val {
+      MeshPrimitiveMode::Lines => 1, MeshPrimitiveMode::LineLoop => 2, MeshPrimitiveMode::LineStrip => 3,
+      MeshPrimitiveMode::Triangles => 4, MeshPrimitiveMode::TriangleStrip => 5, MeshPrimitiveMode::TriangleFan => 6,
+      MeshPrimitiveMode::Points => 0, _ => 7
+    }
+  }
+}
+impl From<MeshPrimitiveMode> for u64 {
   fn from(val: MeshPrimitiveMode) -> Self {
     match val {
       MeshPrimitiveMode::Lines => 1, MeshPrimitiveMode::LineLoop => 2, MeshPrimitiveMode::LineStrip => 3,
@@ -243,8 +271,8 @@ pub enum SamplerFilter {
   NearestMipmapLinear = 9986, LinearMipmapLinear = 9987,
   Nearest = 9728, Linear = 9729, Undefined
 }
-impl From<i32> for SamplerFilter {
-  fn from(val: i32) -> Self {
+impl From<usize> for SamplerFilter {
+  fn from(val: usize) -> Self {
     match val {
       9984 => SamplerFilter::NearestMipmapNearest,
       9985 => SamplerFilter::LinearMipmapNearest,
@@ -256,7 +284,20 @@ impl From<i32> for SamplerFilter {
     }
   }
 }
-impl From<SamplerFilter> for i32 {
+impl From<SamplerFilter> for usize {
+  fn from(val: SamplerFilter) -> Self {
+    match val {
+      SamplerFilter::NearestMipmapNearest => 9984,
+      SamplerFilter::LinearMipmapNearest => 9985,
+      SamplerFilter::NearestMipmapLinear => 9986,
+      SamplerFilter::LinearMipmapLinear => 9987,
+      SamplerFilter::Nearest => 9728,
+      SamplerFilter::Linear => 9729,
+      _ => 0
+    }
+  }
+}
+impl From<SamplerFilter> for u64 {
   fn from(val: SamplerFilter) -> Self {
     match val {
       SamplerFilter::NearestMipmapNearest => 9984,
@@ -279,8 +320,8 @@ impl Undefinable for SamplerFilter {
 pub enum SamplerWrap {
   ClampToEdge = 33071, MirroredRepeat = 33648, #[default] Repeat = 10497, Undefined
 }
-impl From<i32> for SamplerWrap {
-  fn from(val: i32) -> Self {
+impl From<usize> for SamplerWrap {
+  fn from(val: usize) -> Self {
     match val {
       33071 => SamplerWrap::ClampToEdge,
       33648 => SamplerWrap::MirroredRepeat,
@@ -289,7 +330,17 @@ impl From<i32> for SamplerWrap {
     }
   }
 }
-impl From<SamplerWrap> for i32 {
+impl From<SamplerWrap> for usize {
+  fn from(val: SamplerWrap) -> Self {
+    match val {
+      SamplerWrap::ClampToEdge => 33071,
+      SamplerWrap::MirroredRepeat => 33648,
+      SamplerWrap::Repeat => 10497,
+      _ => 0
+    }
+  }
+}
+impl From<SamplerWrap> for u64 {
   fn from(val: SamplerWrap) -> Self {
     match val {
       SamplerWrap::ClampToEdge => 33071,

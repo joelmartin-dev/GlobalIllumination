@@ -17,15 +17,15 @@ use methods::{
   default_base_color_factor, default_emissive_factor, default_mesh_primitive_mode, 
   default_f32_1, default_f32_half, default_matrix,
   default_rotation, default_scale, default_translation,
-  serialize_to_i32, serialize_option_to_i32, serialize_to_str, serialize_option_to_str,
-  deserialize_from_i32_to_enum, deserialize_from_option_i32_to_enum,
+  serialize_to_u64, serialize_option_to_u64, serialize_to_str, serialize_option_to_str,
+  deserialize_from_usize_to_enum, deserialize_from_option_usize_to_enum,
   deserialize_from_string_to_enum, deserialize_from_option_string_to_enum,
   deserialize_string_to_iri
 };
 
 use crate::gltf_loader::{enums::{BufferViewTarget, CameraType, ImageMimeType}, error::GltfError};
 
-trait Validatable { fn is_valid(&self, base: &GltfLoader) -> anyhow::Result<()>; }
+trait Validatable { fn is_valid(&self, base: &GltfDocument) -> anyhow::Result<()>; }
 
 fn check_for_dup_items<T>(v: &Vec<T>, name: &str) -> anyhow::Result<()> 
 where T: PartialEq + Ord + Clone
@@ -70,7 +70,7 @@ where T: PartialOrd + Display + Copy
 }
 
 #[derive(Serialize, Deserialize, Debug)]
-pub struct GltfLoader {
+pub struct GltfDocument {
   // Names of glTF extensions used in this asset.
   #[serde(rename = "extensionsUsed")]
   pub extensions_used: Option<Vec<String>>,
@@ -101,7 +101,7 @@ pub struct GltfLoader {
   // An array of samplers.
   pub samplers: Option<Vec<Sampler>>,
   // The index of the default scene.  This property **MUST NOT** be defined, when `scenes` is undefined.
-  pub scene: Option<i32>, // min: 0
+  pub scene: Option<usize>, // min: 0
   // An array of scenes.
   pub scenes: Option<Vec<Scene>>,
   // An array of skins.  A skin is defined by joints and matrices.
@@ -111,8 +111,8 @@ pub struct GltfLoader {
   pub extensions: Option<Extension>,
   pub extras: Option<Extra>,
 }
-impl Validatable for GltfLoader {
-  fn is_valid(&self, _base: &GltfLoader) -> anyhow::Result<()> {
+impl Validatable for GltfDocument {
+  fn is_valid(&self, _base: &GltfDocument) -> anyhow::Result<()> {
     if let Some(ext_used)     = &self.extensions_used     { check_if_empty(ext_used,      "extensionsUsed"    )? ; 
                                                             check_for_dup_items(ext_used, "extensionsUsed"    )? ;
                                                             Err(GltfError::from(format!("Unsupported extensions found: {:?}", ext_used)))? }
@@ -148,17 +148,17 @@ pub struct Accessor {
   // The index of the buffer view. When undefined, the accessor **MUST** be initialized with zeros; 
   // `sparse` property or extensions **MAY** override zeros with actual values.
   #[serde(rename = "bufferView")]
-  pub buffer_view: Option<i32>, // min: 0
+  pub buffer_view: Option<usize>, // min: 0
   // The offset relative to the start of the buffer view in bytes.
   // This **MUST** be a multiple of the size of the component datatype. 
   // This property **MUST NOT** be defined when `bufferView` is undefined.
   #[serde(rename = "byteOffset", default)]
-  pub byte_offset: Option<i32>, // min: 0, default: 0
+  pub byte_offset: Option<usize>, // min: 0, default: 0
   // The datatype of the accessor's components.
   // UNSIGNED_INT type **MUST NOT** be used for any accessor that is not referenced by `mesh.primitive.indices`.
   #[serde(rename = "componentType",
-    serialize_with = "serialize_to_i32",
-    deserialize_with = "deserialize_from_i32_to_enum",
+    serialize_with = "serialize_to_u64",
+    deserialize_with = "deserialize_from_usize_to_enum",
   )]
   pub component_type: ComponentType, // Can be any ComponentType
   // Specifies whether integer data values are normalized (`true`) to [0, 1] (for unsigned types) 
@@ -168,7 +168,7 @@ pub struct Accessor {
   pub normalized: bool, // default: false
   // The number of elements referenced by this accessor, 
   // not to be confused with the number of bytes or number of components.
-  pub count: i32, // min: 1
+  pub count: usize, // min: 1
   // Specifies if the accessor's elements are scalars, vectors, or matrices.
   #[serde(rename = "type",
     serialize_with = "serialize_to_str",
@@ -196,7 +196,7 @@ pub struct Accessor {
   pub extras: Option<Extra>,
 }
 impl Validatable for Accessor {
-  fn is_valid(&self, base: &GltfLoader) -> anyhow::Result<()> {
+  fn is_valid(&self, base: &GltfDocument) -> anyhow::Result<()> {
     if let Some(buffer_view) = 
       self.buffer_view { check_items_for_min_val(&[buffer_view], 0, "accessor.bufferView")? };
     if let Some(byte_offset) = 
@@ -263,7 +263,7 @@ pub struct Animation {
   pub extras: Option<Extra>,
 }
 impl Validatable for Animation {
-  fn is_valid(&self, base: &GltfLoader) -> anyhow::Result<()> {
+  fn is_valid(&self, base: &GltfDocument) -> anyhow::Result<()> {
     check_if_empty(&self.channels, "animation.channels")?;
     check_if_empty(&self.samplers, "animation.channels")?;
     self.channels.iter().try_for_each(|c| c.is_valid(base) )?;
@@ -290,7 +290,7 @@ pub struct Asset {
   pub extras: Option<Extra>,
 }
 impl Validatable for Asset {
-  fn is_valid(&self, _base: &GltfLoader) -> anyhow::Result<()> {
+  fn is_valid(&self, _base: &GltfDocument) -> anyhow::Result<()> {
     let version_regex = Regex::new("^[0-9]+\\.[0-9]+$").unwrap();
     if !version_regex.is_match(&self.version) {
       Err(GltfError::from(format!("`asset.version` must match regex: ^[0-9]+\\.[0-9]+$")))?
@@ -326,13 +326,13 @@ pub struct Buffer {
   pub uri: Option<String>, // format: iri-reference, gltf_uriType: application
   // The length of the buffer in bytes.
   #[serde(rename = "byteLength")]
-  pub byte_length: i32, // min: 1
+  pub byte_length: usize, // min: 1
   pub name: Option<String>,
   pub extensions: Option<Extension>,
   pub extras: Option<Extra>,
 }
 impl Validatable for Buffer {
-  fn is_valid(&self, _base: &GltfLoader) -> anyhow::Result<()> {
+  fn is_valid(&self, _base: &GltfDocument) -> anyhow::Result<()> {
     
     if let Some(uri) = &self.uri {
       match iri::Path::new(&uri) { Err(e) => Err(GltfError::from(e.to_string()))?, _ => () } }
@@ -345,22 +345,22 @@ impl Validatable for Buffer {
 #[derive(Serialize, Deserialize, Debug)]
 pub struct BufferView {
   // The index of the buffer.
-  pub buffer: i32, // min: 0
+  pub buffer: usize, // min: 0
   // The offset into the buffer in bytes.
   #[serde(rename = "byteOffset")]
-  pub byte_offset: Option<i32>, // min: 0, default: 0
+  pub byte_offset: Option<usize>, // min: 0, default: 0
   // The length of the buffer_view in bytes.
   #[serde(rename = "byteLength")]
-  pub byte_length: i32, // min: 1
+  pub byte_length: usize, // min: 1
   // The stride, in bytes, between vertex attributes. 
   // When this is not defined, data is tightly packed. 
   // When two or more accessors use the same buffer view, this field **MUST** be defined.
   #[serde(rename = "byteStride")]
-  pub byte_stride: Option<i32>, // min: 4, max: 252, multipleOf: 4,
+  pub byte_stride: Option<usize>, // min: 4, max: 252, multipleOf: 4,
   // The hint representing the intended GPU buffer type to use with this buffer view.
   #[serde(
-    serialize_with = "serialize_option_to_i32",
-    deserialize_with = "deserialize_from_option_i32_to_enum", 
+    serialize_with = "serialize_option_to_u64",
+    deserialize_with = "deserialize_from_option_usize_to_enum", 
     default
   )]
   target: Option<BufferViewTarget>,
@@ -369,7 +369,7 @@ pub struct BufferView {
   pub extras: Option<Extra>,
 }
 impl Validatable for BufferView {
-  fn is_valid(&self, _base: &GltfLoader) -> anyhow::Result<()> {
+  fn is_valid(&self, _base: &GltfDocument) -> anyhow::Result<()> {
     check_items_for_min_val(&[self.buffer], 0, "bufferView.buffer")?;
     if let Some(byte_offset) = self.byte_offset { check_items_for_min_val(&[byte_offset], 0, "bufferView.byteOffset")? };
     check_items_for_min_val(&[self.byte_length], 1, "bufferView.byteLength")?;
@@ -403,7 +403,7 @@ pub struct Camera {
   pub extras: Option<Extra>,
 }
 impl Validatable for Camera {
-  fn is_valid(&self, base: &GltfLoader) -> anyhow::Result<()> {
+  fn is_valid(&self, base: &GltfDocument) -> anyhow::Result<()> {
     if self.orthographic.is_some() && self.perspective.is_some() {
       Err(GltfError::from(format!("`camera.perspective` and `camera.orthographic` must not both be defined!")))?
     }
@@ -442,13 +442,13 @@ pub struct Image {
   pub mime_type: Option<ImageMimeType>, // anyOf: image/jpeg, image/png, or some string
   // The index of the bufferView that contains the image. This field **MUST NOT** be defined when `uri` is defined.
   #[serde(rename = "bufferView")]
-  pub buffer_view: Option<i32>, // min: 0
+  pub buffer_view: Option<usize>, // min: 0
   pub name: Option<String>,
   pub extensions: Option<Extension>,
   pub extras: Option<Extra>,
 }
 impl Validatable for Image {
-  fn is_valid(&self, _base: &GltfLoader) -> anyhow::Result<()> {
+  fn is_valid(&self, _base: &GltfDocument) -> anyhow::Result<()> {
     if self.uri.is_some() && self.buffer_view.is_some() {
       Err(GltfError::from(format!("`image.uri` and `image.bufferView` must not both be defined!")))?
     }
@@ -516,10 +516,10 @@ pub struct Material {
   pub extras: Option<Extra>,
 }
 impl Validatable for Material {
-  fn is_valid(&self, base: &GltfLoader) -> anyhow::Result<()> {
+  fn is_valid(&self, base: &GltfDocument) -> anyhow::Result<()> {
     check_items_for_min_val(&self.emissive_factor, 0.0, "material.emissiveFactor")?;
     check_items_for_max_val(&self.emissive_factor, 1.0, "material.emissiveFactor")?;
-    if self.alpha_cutoff != 0.5 && self.alpha_mode != MaterialAlphaMode::Opaque {
+    if self.alpha_cutoff != 0.5 && self.alpha_mode == MaterialAlphaMode::Opaque {
       Err(GltfError::from(format!("`material.alphaCutoff` must not be defined when `material.alphaMode` is not defined!")))?
     }
     if let Some(emissive_tex_info) = &self.emissive_texture { emissive_tex_info.is_valid(base)? };
@@ -543,7 +543,7 @@ pub struct Mesh {
   pub extras: Option<Extra>,
 }
 impl Validatable for Mesh {
-  fn is_valid(&self, _base: &GltfLoader) -> anyhow::Result<()> {
+  fn is_valid(&self, _base: &GltfDocument) -> anyhow::Result<()> {
     check_if_empty(&self.primitives, "mesh.primitives")?;
     if let Some(weights) = &self.weights { check_if_empty(weights, "mesh.weights")? }
     Ok(())
@@ -567,18 +567,18 @@ impl Validatable for Mesh {
 #[derive(Serialize, Deserialize, Debug)]
 pub struct Node {
   // The index of the camera referenced by this node.
-  pub camera: Option<i32>, // min: 0
+  pub camera: Option<usize>, // min: 0
   // The indices of this node's children.
-  pub children: Option<Vec<i32 /* min: 0 */>>, // minItems: 1, uniqueItems
+  pub children: Option<Vec<usize /* min: 0 */>>, // minItems: 1, uniqueItems
   // The index of the skin referenced by this node. 
   // When a skin is referenced by a node within a scene, all joints used by the skin **MUST** belong to the same scene. 
   // When defined, `mesh` **MUST** also be defined.
-  pub skin: Option<i32>, // min: 0
+  pub skin: Option<usize>, // min: 0
   // A floating-point 4x4 transformation matrix stored in column-major order.
   #[serde(default = "default_matrix")]
   pub matrix: [f32; 16], // minItems: 16, maxItems: 16, default: [ 1.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 1.0 ]
   // The index of the mesh in this node.
-  pub mesh: Option<i32>, // min: 0
+  pub mesh: Option<usize>, // min: 0
   // The node's unit quaternion rotation in the order (x, y, z, w), where w is the scalar.
   #[serde(default = "default_rotation")]
   pub rotation: [f32 /* min: -1.0, max: 1.0 */; 4], // minItems: 4, maxItems: 4, default: [ 0.0, 0.0, 0.0, 1.0 ]
@@ -597,7 +597,7 @@ pub struct Node {
   pub extras: Option<Extra>,
 }
 impl Validatable for Node {
-  fn is_valid(&self, _base: &GltfLoader) -> anyhow::Result<()> {
+  fn is_valid(&self, _base: &GltfDocument) -> anyhow::Result<()> {
     if let Some(camera) = self.camera { check_items_for_min_val(&[camera], 0, "node.camera")? }
     if let Some(children) = &self.children { 
       check_if_empty(&children, "node.children")?;
@@ -624,29 +624,29 @@ impl Validatable for Node {
 pub struct Sampler {
   // Magnification filter.
   #[serde(rename = "magFilter",
-    serialize_with = "serialize_option_to_i32",
-    deserialize_with = "deserialize_from_option_i32_to_enum",
+    serialize_with = "serialize_option_to_u64",
+    deserialize_with = "deserialize_from_option_usize_to_enum",
     default
   )]
   pub mag_filter: Option<SamplerFilter>, // NEAREST, LINEAR, or some integer
   // Minification filter.
   #[serde(rename = "minFilter",
-    serialize_with = "serialize_option_to_i32",
-    deserialize_with = "deserialize_from_option_i32_to_enum",
+    serialize_with = "serialize_option_to_u64",
+    deserialize_with = "deserialize_from_option_usize_to_enum",
     default
   )]
   pub min_filter: Option<SamplerFilter>, // NEAREST, LINEAR, NEAREST_MIPMAP_NEAREST, LINEAR_MIPMAP_NEAREST, NEAREST_MIPMAP_LINEAR, LINEAR_MIPMAP_LINEAR, or some integer
   // S (U) wrapping mode. All valid values correspond to WebGL enums
   #[serde(rename = "wrapS",
-    serialize_with = "serialize_to_i32",
-    deserialize_with = "deserialize_from_i32_to_enum",
+    serialize_with = "serialize_to_u64",
+    deserialize_with = "deserialize_from_usize_to_enum",
     default
   )]
   pub wrap_s: SamplerWrap, // default: REPEAT
   // T (V) wrapping mode.
   #[serde(rename = "wrapT",
-    serialize_with = "serialize_to_i32",
-    deserialize_with = "deserialize_from_i32_to_enum",
+    serialize_with = "serialize_to_u64",
+    deserialize_with = "deserialize_from_usize_to_enum",
     default
   )]
   pub wrap_t: SamplerWrap, // default: REPEAT
@@ -655,7 +655,7 @@ pub struct Sampler {
   pub extras: Option<Extra>,
 }
 impl Validatable for Sampler {
-  fn is_valid(&self, _base: &GltfLoader) -> anyhow::Result<()> {
+  fn is_valid(&self, _base: &GltfDocument) -> anyhow::Result<()> {
     if let Some(mag_filter) = self.mag_filter {
       match mag_filter {
         SamplerFilter::Nearest => (),
@@ -670,28 +670,18 @@ impl Validatable for Sampler {
 // The root nodes of a scene.
 #[derive(Serialize, Deserialize, Debug)]
 pub struct Scene {
-  pub nodes: Option<Vec<i32 /* min: 0 */>>, // minItems: 1, uniqueItems
+  pub nodes: Option<Vec<usize /* min: 0 */>>, // minItems: 1, uniqueItems
   pub name: Option<String>,
   pub extensions: Option<Extension>,
   pub extras: Option<Extra>,
 }
 impl Validatable for Scene {
-  fn is_valid(&self, _base: &GltfLoader) -> anyhow::Result<()> {
+  fn is_valid(&self, _base: &GltfDocument) -> anyhow::Result<()> {
     if self.nodes.is_some() {
       let nodes = self.nodes.as_ref().unwrap();
-      if nodes.is_empty() {
-        Err(GltfError::from(format!("`scene.nodes` must have at least one item!")))?
-      }
-      let has_neg = nodes.iter().any(|&elem| {elem < 0});
-      if has_neg {
-        Err(GltfError::from(format!("All elements in `scene.nodes` must be greater than 0")))?
-      }
-      let mut copy: Vec<i32> = nodes.clone();
-      copy.sort();
-      let has_dup = copy.windows(2).any(|elems| elems[0] == elems[1]);
-      if has_dup {
-        Err(GltfError::from(format!("`scene.nodes` must have unique items!")))?
-      }
+      check_if_empty(nodes, "scene.nodes")?;
+      check_items_for_min_val(&nodes, 0, "scene.nodes")?;
+      check_for_dup_items(&nodes, "scene.nodes")?;
     }
     Ok(())
   }
@@ -704,28 +694,27 @@ pub struct Skin {
   // Its `accessor.count` property **MUST** be greater than or equal to the number of elements of the `joints` array. 
   // When undefined, each matrix is a 4x4 identity matrix.
   #[serde(rename = "inverseBindMatrices")]
-  pub inverse_bind_matrices: Option<i32>, // min: 0
+  pub inverse_bind_matrices: Option<usize>, // min: 0
   // The index of the node used as a skeleton root. 
   // The node **MUST** be the closest common root of the joints hierarchy or a direct or indirect parent node of the closest common root.
-  pub skeleton: Option<i32>, // min: 0
+  pub skeleton: Option<usize>, // min: 0
   // Indices of skeleton, nodes used as joints in this skin.
-  pub joints: Vec<i32 /* min: 0 */>, // minItems: 1, uniqueItems
+  pub joints: Vec<usize /* min: 0 */>, // minItems: 1, uniqueItems
   pub name: Option<String>,
   pub extensions: Option<Extension>,
   pub extras: Option<Extra>,
 }
 impl Validatable for Skin {
-  fn is_valid(&self, base: &GltfLoader) -> anyhow::Result<()> {
+  fn is_valid(&self, base: &GltfDocument) -> anyhow::Result<()> {
     if let Some(inv_bind_mat) = 
       self.inverse_bind_matrices { 
         check_items_for_min_val(&[inv_bind_mat], 0, "skin.inverseBindMatrices")?;
       let ref_accessor: &Accessor = 
-      match base.accessors.as_ref().unwrap().iter().nth(
-        match usize::try_from(inv_bind_mat) { Ok(v) => v, Err(e) => Err(e)? }) {
+      match base.accessors.as_ref().unwrap().get(inv_bind_mat) {
           Some(v) => v,
           None => Err(GltfError::from(format!("`skin.inverseBindMatrices` is not a valid accessor!")))?
         };
-      if ref_accessor.count < match i32::try_from(self.joints.len()) { Ok(v) => v, Err(e) => Err(e)? } {
+      if ref_accessor.count < self.joints.len() {
         Err(GltfError::from(format!(
           "The count of referenced accessor `skin.inverseBindMatrices` must be greater than or equal to the number of elements of the `skin.joints` array!"
         )))?
@@ -747,16 +736,16 @@ impl Validatable for Skin {
 pub struct Texture {
   // The index of the sampler used by this texture. 
   // When undefined, a sampler with repeat wrapping and auto filtering **SHOULD** be used.
-  pub sampler: Option<i32>, // min: 0
+  pub sampler: Option<usize>, // min: 0
   // The index of the image used by this texture. 
   // When undefined, an extension or other mechanism **SHOULD** supply an alternate texture source, otherwise behavior is undefined.
-  pub source: Option<i32>, // min: 0
+  pub source: Option<usize>, // min: 0
   pub name: Option<String>,
   pub extensions: Option<Extension>,
   pub extras: Option<Extra>,
 }
 impl Validatable for Texture {
-  fn is_valid(&self, _base: &GltfLoader) -> anyhow::Result<()> {
+  fn is_valid(&self, _base: &GltfDocument) -> anyhow::Result<()> {
     if let Some(sampler) = self.sampler { check_items_for_min_val(&[sampler], 0, "texture.sampler")?}
     if let Some(source) = self.source { check_items_for_min_val(&[source], 0, "texture.source")?}
     Ok(())
@@ -783,25 +772,24 @@ pub struct AccessorSparseIndices {
   // The referenced buffer view **MUST NOT** have its `target` or `byteStride` properties defined. 
   // The buffer view and the optional `byteOffset` **MUST** be aligned to the `componentType` byte length.
   #[serde(rename = "bufferView")]
-  pub buffer_view: i32, // min: 0
+  pub buffer_view: usize, // min: 0
   // The offset relative to the start of the buffer view in bytes.
   #[serde(rename = "byteOffset", default)]
-  pub byte_offset: i32, // min: 0, default: 0
+  pub byte_offset: usize, // min: 0, default: 0
   // The indices data type.
   #[serde(rename = "componentType",
-    serialize_with = "serialize_to_i32",
-    deserialize_with = "deserialize_from_i32_to_enum",
+    serialize_with = "serialize_to_u64",
+    deserialize_with = "deserialize_from_usize_to_enum",
   )]
   pub component_type: ComponentType, // UNSIGNED_BYTE, UNSIGNED_SHORT, or UNSIGNED_INT
   pub extensions: Option<Extension>,
   pub extras: Option<Extra>,
 }
 impl Validatable for AccessorSparseIndices {
-  fn is_valid(&self, base: &GltfLoader) -> anyhow::Result<()> {
+  fn is_valid(&self, base: &GltfDocument) -> anyhow::Result<()> {
     check_items_for_min_val(&[self.buffer_view], 0, "accessor.sparse.indices.bufferView")?;
     let ref_buf_view: &BufferView = 
-      match base.buffer_views.as_ref().unwrap().iter().nth(
-        match usize::try_from(self.buffer_view) { Ok(v) => v, Err(e) => Err(e)? }) {
+      match base.buffer_views.as_ref().unwrap().get(self.buffer_view) {
           Some(v) => v,
           None => Err(GltfError::from(format!("`accessor.sparse.indices.bufferView` is not a valid bufferView!")))?
         };
@@ -816,10 +804,9 @@ impl Validatable for AccessorSparseIndices {
       )))? 
     }
     check_items_for_min_val(&[self.byte_offset], 0, "accessor.sparse.indices.byteOffset")?;
-    let valid_component_type = 
-      [ComponentType::UnsignedByte, ComponentType::UnsignedShort, ComponentType::UnsignedInt]
-        .iter().any(|&ty| ty == self.component_type);
-    if !valid_component_type { 
+    if [ComponentType::UnsignedByte, ComponentType::UnsignedShort, ComponentType::UnsignedInt]
+      .iter().any(|&ty| ty == self.component_type)
+    {
       Err(GltfError::from(format!(
         "`accessor.sparse.indices.componentType` must be any of `UNSIGNED_BYTE`, `UNSIGNED_SHORT`, or `UNSIGNED_INT`")))? 
     }
@@ -832,19 +819,18 @@ pub struct AccessorSparseValues {
   // The index of the bufferView with sparse values. 
   // The referenced buffer view **MUST NOT** have its `target` or `byteStride` properties defined.
   #[serde(rename = "bufferView")]
-  pub buffer_view: i32, // min: 0
+  pub buffer_view: usize, // min: 0
   // The offset relative to the start of the bufferView in bytes.
   #[serde(rename = "byteOffset", default)]
-  pub byte_offset: i32, // min: 0, default: 0
+  pub byte_offset: usize, // min: 0, default: 0
   pub extensions: Option<Extension>,
   pub extras: Option<Extra>,
 }
 impl Validatable for AccessorSparseValues {
-  fn is_valid(&self, base: &GltfLoader) -> anyhow::Result<()> {
+  fn is_valid(&self, base: &GltfDocument) -> anyhow::Result<()> {
     check_items_for_min_val(&[self.buffer_view], 0, "accessor.sparse.values.bufferView")?;
     let ref_buf_view: &BufferView = 
-      match base.buffer_views.as_ref().unwrap().iter().nth(
-        match usize::try_from(self.buffer_view) { Ok(v) => v, Err(e) => Err(e)? })
+      match base.buffer_views.as_ref().unwrap().get(self.buffer_view)
         {
           Some(v) => v,
           None => Err(GltfError::from(format!("`accessor.sparse.values.bufferView` is not a valid bufferView!"))) ?
@@ -868,7 +854,7 @@ impl Validatable for AccessorSparseValues {
 #[derive(Serialize, Deserialize, Debug)]
 pub struct AccessorSparse {
   // Number of deviating accessor values stored in the sparse array.
-  pub count: i32, // min: 1
+  pub count: usize, // min: 1
   // An object pointing to a buffer view containing the indices of deviating accessor values. 
   // The number of indices is equal to `count`. Indices **MUST** strictly increase.
   pub indices: AccessorSparseIndices,
@@ -878,7 +864,7 @@ pub struct AccessorSparse {
   pub extras: Option<Extra>,
 }
 impl Validatable for AccessorSparse {
-  fn is_valid(&self, base: &GltfLoader) -> anyhow::Result<()> {
+  fn is_valid(&self, base: &GltfDocument) -> anyhow::Result<()> {
     check_items_for_min_val(&[self.count], 1, "accessor.sparse.count")?;
     self.indices.is_valid(base)?;
     self.values.is_valid(base)?;
@@ -890,7 +876,7 @@ impl Validatable for AccessorSparse {
 #[derive(Serialize, Deserialize, Debug)]
 pub struct AnimationChannelTarget {
   // The index of the node to animate. When undefined, the animated object **MAY** be defined by an extension.
-  pub node: Option<i32>, // min: 0
+  pub node: Option<usize>, // min: 0
   // The name of the node's TRS property to animate, or the "weights" of the Morph Targets it instantiates. 
   // For the "translation" property, the values that are provided by the sampler are the translation along the X, Y, and Z axes. 
   // For the "rotation" property, the values are a quaternion in the order (x, y, z, w), where w is the scalar. 
@@ -904,13 +890,12 @@ pub struct AnimationChannelTarget {
   pub extras: Option<Extra>,
 }
 impl Validatable for AnimationChannelTarget {
-  fn is_valid(&self, base: &GltfLoader) -> anyhow::Result<()> {
+  fn is_valid(&self, base: &GltfDocument) -> anyhow::Result<()> {
     if let Some(node) = self.node { 
       check_items_for_min_val(&[node], 0, "animation.channel.target.node")?; 
       let ref_node: &Node = 
-        match base.nodes.as_ref().unwrap().iter().nth(
-          match usize::try_from(node) { Ok(v) => v, Err(e) => Err(e)? }
-        ){
+        match base.nodes.as_ref().unwrap().get(node)
+        {
           Some(v) => v,
           None => Err(GltfError::from(format!("`animation.channel.target.node` is not a valid node!")))?
         };
@@ -927,14 +912,14 @@ impl Validatable for AnimationChannelTarget {
 pub struct AnimationChannel {
   // The index of a sampler in this animation used to compute the value for the target, 
   // e.g., a node's translation, rotation, or scale (TRS).
-  pub sampler: i32, // min: 0
+  pub sampler: usize, // min: 0
   // The descriptor of the animated property.
   pub target: AnimationChannelTarget,
   pub extensions: Option<Extension>,
   pub extras: Option<Extra>,
 }
 impl Validatable for AnimationChannel {
-  fn is_valid(&self, base: &GltfLoader) -> anyhow::Result<()> {
+  fn is_valid(&self, base: &GltfDocument) -> anyhow::Result<()> {
     check_items_for_min_val(&[self.sampler], 0, "animation.channel.sampler")?;
     self.target.is_valid(base)?;
     Ok(())
@@ -947,24 +932,25 @@ pub struct AnimationSampler {
   // The index of an accessor containing keyframe timestamps. 
   // The accessor **MUST** be of scalar type with floating-point components. 
   // The values represent time in seconds with `time[0] >= 0.0`, and strictly increasing values, i.e., `time[n + 1] > time[n]`.
-  pub input: i32, // min: 0
+  pub input: usize, // min: 0
   #[serde(
     serialize_with = "serialize_to_str",
     deserialize_with = "deserialize_from_string_to_enum",
     default
   )]
   pub interpolation: AnimationSamplerInterpolationType, // anyOf: LINEAR, STEP, CUBICSPLINE, or some string
-  pub output: i32, // min: 0
+  pub output: usize, // min: 0
   pub extensions: Option<Extension>,
   pub extras: Option<Extra>,
 }
 impl Validatable for AnimationSampler {
-  fn is_valid(&self, base: &GltfLoader) -> anyhow::Result<()> {
+  fn is_valid(&self, base: &GltfDocument) -> anyhow::Result<()> {
     check_items_for_min_val(&[self.input], 0, "animation.sampler.input")?;
     check_items_for_min_val(&[self.output], 0, "animation.sampler.output")?;
     if let Some(accessors) = &base.accessors { 
       let input_accessor: &Accessor = 
-        match accessors.iter().nth(match usize::try_from(self.input) { Ok(v) => v, Err(e) => Err(e)?}) {
+        match accessors.get(self.input) 
+        {
           Some(v) => v,
           None => Err(GltfError::from(format!("`animation.sampler.input` must reference a valid accessor!")))?
         }; 
@@ -994,7 +980,7 @@ pub struct Orthographic {
   pub extras: Option<Extra>,
 }
 impl Validatable for Orthographic {
-  fn is_valid(&self, _base: &GltfLoader) -> anyhow::Result<()> {
+  fn is_valid(&self, _base: &GltfDocument) -> anyhow::Result<()> {
     if self.xmag == 0.0 { Err(GltfError::from(format!("`camera.orthographic.xmag` must not be equal to 0.0!")))? }
     if self.ymag == 0.0 { Err(GltfError::from(format!("`camera.orthographic.ymag` must not be equal to 0.0!")))? }
     if self.zfar <= 0.0 { Err(GltfError::from(format!("`camera.orthographic.zfar` must be greater than 0.0!")))? }
@@ -1023,7 +1009,7 @@ pub struct Perspective {
   pub extras: Option<Extra>,
 }
 impl Validatable for Perspective {
-  fn is_valid(&self, _base: &GltfLoader) -> anyhow::Result<()> {
+  fn is_valid(&self, _base: &GltfDocument) -> anyhow::Result<()> {
     if let Some(aspect_ratio) = self.aspect_ratio { 
       if aspect_ratio <= 0.0 { Err(GltfError::from(format!("`camera.perspective.aspect_ratio` must be greater than 0.0!")))?}
     }
@@ -1041,17 +1027,17 @@ impl Validatable for Perspective {
 #[derive(Serialize, Deserialize, Debug)]
 pub struct TextureInfo {
   // The index of the texture.
-  pub index: i32, // min: 0
+  pub index: usize, // min: 0
   // This integer value is used to construct a string in the format `TEXCOORD_<set index>` 
   // which is a reference to a key in `mesh.primitives.attributes` (e.g. a value of `0` corresponds to `TEXCOORD_0`). 
   // A mesh primitive **MUST** have the corresponding texture coordinate attributes for the material to be applicable to it.
   #[serde(rename = "texCoord", default)]
-  pub tex_coord: i32, // min: 0, default: 0
+  pub tex_coord: usize, // min: 0, default: 0
   pub extensions: Option<Extension>,
   pub extras: Option<Extra>,
 }
 impl Validatable for TextureInfo {
-  fn is_valid(&self, _base: &GltfLoader) -> anyhow::Result<()> {
+  fn is_valid(&self, _base: &GltfDocument) -> anyhow::Result<()> {
     check_items_for_min_val(&[self.index], 0, "textureInfo.index")?;
     check_items_for_min_val(&[self.tex_coord], 0, "textureInfo.texCoord")?;
     Ok(())
@@ -1089,7 +1075,7 @@ pub struct MaterialPbrMetallicRoughness {
   pub extras: Option<Extra>,
 }
 impl Validatable for MaterialPbrMetallicRoughness {
-  fn is_valid(&self, base: &GltfLoader) -> anyhow::Result<()> {
+  fn is_valid(&self, base: &GltfDocument) -> anyhow::Result<()> {
     check_items_for_min_val(&self.base_color_factor, 0.0, "material.pbrMetallicRoughness.baseColorFactor")?;
     check_items_for_max_val(&self.base_color_factor, 1.0, "material.pbrMetallicRoughness.baseColorFactor")?;
     if let Some(base_color_tex_info) = &self.base_color_texture { base_color_tex_info.is_valid(base)? };
@@ -1105,12 +1091,12 @@ impl Validatable for MaterialPbrMetallicRoughness {
 #[derive(Serialize, Deserialize, Debug)]
 pub struct MaterialOcclusionTextureInfo {
   // The index of the texture.
-  pub index: i32, // min: 0
+  pub index: usize, // min: 0
   // This integer value is used to construct a string in the format `TEXCOORD_<set index>` 
   // which is a reference to a key in `mesh.primitives.attributes` (e.g. a value of `0` corresponds to `TEXCOORD_0`). 
   // A mesh primitive **MUST** have the corresponding texture coordinate attributes for the material to be applicable to it.
   #[serde(rename = "texCoord", default)]
-  pub tex_coord: i32, // min: 0, default: 0
+  pub tex_coord: usize, // min: 0, default: 0
   // A scalar parameter controlling the amount of occlusion applied. 
   // A value of `0.0` means no occlusion. A value of `1.0` means full occlusion. 
   // This value affects the final occlusion value as: `1.0 + strength * (<sampled occlusion texture value> - 1.0)`.
@@ -1120,7 +1106,7 @@ pub struct MaterialOcclusionTextureInfo {
   pub extras: Option<Extra>,
 }
 impl Validatable for MaterialOcclusionTextureInfo {
-  fn is_valid(&self, _base: &GltfLoader) -> anyhow::Result<()> {
+  fn is_valid(&self, _base: &GltfDocument) -> anyhow::Result<()> {
     check_items_for_min_val(&[self.index], 0, "material.occlusionTextureInfo.index")?;
     check_items_for_min_val(&[self.tex_coord], 0, "material.occlusionTextureInfo.texCoord")?;
     check_items_for_min_val(&[self.strength], 0.0, "material.occlusionTextureInfo.strength")?;
@@ -1132,12 +1118,12 @@ impl Validatable for MaterialOcclusionTextureInfo {
 #[derive(Serialize, Deserialize, Debug)]
 pub struct MaterialNormalTextureInfo {
   // The index of the texture.
-  pub index: i32, // min: 0
+  pub index: usize, // min: 0
   // This integer value is used to construct a string in the format `TEXCOORD_<set index>` 
   // which is a reference to a key in `mesh.primitives.attributes` (e.g. a value of `0` corresponds to `TEXCOORD_0`). 
   // A mesh primitive **MUST** have the corresponding texture coordinate attributes for the material to be applicable to it.
   #[serde(rename = "texCoord", default)]
-  pub tex_coord: i32, // min: 0, default: 0
+  pub tex_coord: usize, // min: 0, default: 0
   // The scalar parameter applied to each normal vector of the texture. 
   // This value scales the normal vector in X and Y directions using the formula: 
   // `scaledNormal =  normalize((<sampled normal texture value> * 2.0 - 1.0) * vec3(<normal scale>, <normal scale>, 1.0))`.
@@ -1147,7 +1133,7 @@ pub struct MaterialNormalTextureInfo {
   pub extras: Option<Extra>,
 }
 impl Validatable for MaterialNormalTextureInfo {
-  fn is_valid(&self, _base: &GltfLoader) -> anyhow::Result<()> {
+  fn is_valid(&self, _base: &GltfDocument) -> anyhow::Result<()> {
     check_items_for_min_val(&[self.index], 0, "material.normalTextureInfo.index")?;
     check_items_for_min_val(&[self.tex_coord], 0, "material.normalTextureInfo.texCoord")?;
     Ok(())
@@ -1158,40 +1144,41 @@ impl Validatable for MaterialNormalTextureInfo {
 pub struct MeshPrimitive {
   // A plain JSON object, where each key corresponds to a mesh attribute semantic 
   // and each value is the index of the accessor containing attribute's data.
-  pub attributes: HashMap<String, i32>,
+  pub attributes: HashMap<String, usize>,
   // The index of the accessor that contains the vertex indices.
   // When this is undefined, the primitive defines non-indexed geometry.
   // When defined, the accessor **MUST** have `SCALAR` type and an unsigned integer component type.
-  pub indices: Option<i32>, // min: 0
+  pub indices: Option<usize>, // min: 0
   // The index of the material to apply to this primitive when rendering.
-  pub material: Option<i32>, // min: 0
+  pub material: Option<usize>, // min: 0
   // The topology type of primitives to render.
   #[serde(
-    serialize_with = "serialize_to_i32",
-    deserialize_with = "deserialize_from_i32_to_enum",
+    serialize_with = "serialize_to_u64",
+    deserialize_with = "deserialize_from_usize_to_enum",
     default = "default_mesh_primitive_mode"
   )]
   pub mode: MeshPrimitiveMode, // default: 4
   // A plain JSON object specifying attributes displacements in a morph target, 
   // where each key corresponds to one of the three supported attribute semantic (`POSITION`, `NORMAL`, or `TANGENT`) 
   // and each value is the index of the accessor containing the attribute displacements' data.
-  pub targets: Option<Vec<HashMap<String, i32>>>, // minItems: 1
+  pub targets: Option<Vec<HashMap<String, usize>>>, // minItems: 1
   pub extensions: Option<Extension>,
   pub extras: Option<Extra>,
 }
 impl Validatable for MeshPrimitive {
-  fn is_valid(&self, base: &GltfLoader) -> anyhow::Result<()> {
+  fn is_valid(&self, base: &GltfDocument) -> anyhow::Result<()> {
     if let Some(indices) = self.indices { 
       check_items_for_min_val(&[indices], 0, "mesh.primitive.indices")?;
       let ref_accessor: &Accessor = 
-        match base.accessors.as_ref().unwrap().iter().nth(
-          match usize::try_from(indices) { Ok(v) => v, Err(e) => Err(e)? }
-        ){
+        match base.accessors.as_ref().unwrap().get(indices)
+        {
           Some(v) => v,
           None => Err(GltfError::from(format!("`mesh.primitive.indices` is not a valid accessor!")))?
         };
-      if ref_accessor.ty != AccessorType::Scalar || ref_accessor.component_type != ComponentType::UnsignedInt {
-        Err(GltfError::from(format!("The referenced accessor `mesh.primitive.indices` must be a `SCALAR` of `UNSIGNED_INT` component type!")))?
+      if ref_accessor.ty != AccessorType::Scalar || 
+        ![ComponentType::UnsignedByte, ComponentType::UnsignedShort, ComponentType::UnsignedInt].iter().any(|&component_type| component_type == ref_accessor.component_type) 
+      {
+        Err(GltfError::from(format!("The referenced accessor `mesh.primitive.indices` must be a `SCALAR` and an unsigned integer component type!")))?
       }
     };
     if let Some(material) = self.material { check_items_for_min_val(&[material], 0, "mesh.primitive.material")? };

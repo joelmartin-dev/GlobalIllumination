@@ -1,6 +1,6 @@
-use std::{fs, path::{self, Path, PathBuf}};
+use std::{fs, path::{self, Path, PathBuf}, str::FromStr};
 
-use crate::gltf_loader::{GltfLoader};
+use crate::gltf_loader::{GltfDocument};
 
 #[cfg(target_os = "linux")]
 const PATHS: &[&str] = &[
@@ -428,23 +428,34 @@ const PATHS: &[&str] = &[
 
 #[test]
 fn parse_test() {
-  let mut prefix = std::env::var("GLTF_PREFIX").unwrap();
-  let path = PathBuf::from(prefix);
-  PATHS.iter().for_each(|&f| {
-    let p_str = String::from(f);
-    let p = PathBuf::from(p_str);
-    let joined_p = path.join(p);
-    let parsed = GltfLoader::load(&joined_p);
-    // println!("{:?}", loaded);
-    // if (loaded.buffers.is_some()) {
-    //   println!("{:?}", loaded.buffers.unwrap());
-    // }
-    if parsed.is_ok() {
-      let loaded = parsed.unwrap();
-    }
-    else {
-      println!("{}", f);
-      println!("{}", parsed.unwrap_err());
-    }
-  });
+  minimal_parse_test();
+  // let mut prefix = std::env::var("GLTF_PREFIX").unwrap();
+  // let path = PathBuf::from(prefix);
+  // PATHS.iter().for_each(|&f| {
+  //   let p_str = String::from(f);
+  //   let p = PathBuf::from(p_str);
+  //   let joined_p = path.join(p);
+  //   let parsed = GltfLoader::load(&joined_p);
+  //   // println!("{:?}", loaded);
+  //   // if (loaded.buffers.is_some()) {
+  //   //   println!("{:?}", loaded.buffers.unwrap());
+  //   // }
+  //   if parsed.is_ok() {
+  //     let loaded = parsed.unwrap();
+  //   }
+  //   else {
+  //     println!("{}", f);
+  //     println!("{}", parsed.unwrap_err());
+  //   }
+  // });
+}
+
+fn minimal_parse_test() {
+  let p_str = String::from(".\\assets\\minimal.gltf");
+  let p = PathBuf::from(p_str);
+  let parsed = GltfDocument::load(&p);
+  match parsed {
+    Ok(_) => (),
+    Err(e) => println!("{}", e.to_string())
+  };
 }
