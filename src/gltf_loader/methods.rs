@@ -179,11 +179,14 @@ pub fn default_base_color_factor() -> [f32; 4] { [1.0, 1.0, 1.0, 1.0] }
 pub fn default_emissive_factor() -> [f32; 3] { [0.0, 0.0, 0.0] }
 pub fn default_f32_1() -> f32 { 1.0 }
 pub fn default_f32_half() -> f32 { 0.5 }
+pub fn default_f32_0() -> f32 { 0.0 }
 pub fn default_matrix() -> [f32; 16] { [ 1.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 1.0 ] }
 pub fn default_mesh_primitive_mode() -> MeshPrimitiveMode { MeshPrimitiveMode::from(4) }
 pub fn default_rotation() -> [f32; 4] { [ 0.0, 0.0, 0.0, 1.0] }
 pub fn default_scale() -> [f32; 3] { [1.0, 1.0, 1.0] }
 pub fn default_translation() -> [f32; 3] { [0.0, 0.0, 0.0] }
+
+// Extensions
 // #endregion
 
 

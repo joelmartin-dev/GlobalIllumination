@@ -174,28 +174,46 @@ impl Engine
       ImageData { images: vec![image], views: vec![view], sampler: Some(Self::create_texture_sampler(&context)) }
     };
 
-    // let vertices: Vec<Vertex> = CUBE.vertices.clone();
-    // let indices: Vec<u32> = CUBE.indices.clone();
-    // let submeshes = vec![SubMesh {
-    //   index_offset: 0, index_count: indices.len() as u32, material_id: 0, 
-    //   first_vertex: 0, max_vertex: vertices.len() as u32, alpha_cut: vk::FALSE
-    // }];
-
     let mut vertices: Vec<Vertex> = Vec::new();
     let mut indices: Vec<u32> = Vec::new();
     let mut submeshes: Vec<SubMesh> = Vec::new();
-    let vertex_data = &mut VertexData { vertex_buffer: (vk::Buffer::null(), vk::DeviceMemory::null()), index_buffer: (vk::Buffer::null(), vk::DeviceMemory::null()), colour_buffer: (vk::Buffer::null(), vk::DeviceMemory::null()), uv_buffer: (vk::Buffer::null(), vk::DeviceMemory::null()), nrm_buffer: (vk::Buffer::null(), vk::DeviceMemory::null()) };
+    let mut vertex_data = VertexData { 
+      vertex_buffer: (vk::Buffer::null(), vk::DeviceMemory::null()), 
+      index_buffer: (vk::Buffer::null(), vk::DeviceMemory::null()), 
+      colour_buffer: (vk::Buffer::null(), vk::DeviceMemory::null()), 
+      uv_buffer: (vk::Buffer::null(), vk::DeviceMemory::null()), 
+      nrm_buffer: (vk::Buffer::null(), vk::DeviceMemory::null()), 
+      tang_buffer: (vk::Buffer::null(), vk::DeviceMemory::null()) 
+    };
 
-    PATHS[49..50].iter().for_each(|&path| {
+    PATHS[35..36].iter().for_each(|&path| {
       let prefix = std::env::var("GLTF_PREFIX").unwrap();
       let prefix_path = PathBuf::from(prefix);
       let p = PathBuf::from(path);
       let joined_p = prefix_path.join(p);
-      match Self::load_gltf(&context, &mut vertices, &mut indices, &mut submeshes, vertex_data, &joined_p, false) {
+      match Self::load_gltf(&context, &mut vertices, &mut indices, &mut submeshes, &vertex_data, &joined_p, true) {
         Err(e) => println!("Received error: {}", e.to_string()),
-        Ok(_) => println!("Loaded: {:?}", path)
+        Ok(vd) => { vertex_data = vd; println!("Loaded: {:?}", path) }
       }
     });
+
+    if vertices.is_empty() {
+      vertices = CUBE.vertices.clone();
+      indices = CUBE.indices.clone();
+      submeshes = vec![SubMesh {
+        index_offset: 0, index_count: indices.len() as u32, material_id: 0, 
+        first_vertex: 0, max_vertex: vertices.len() as u32, alpha_cut: vk::FALSE
+      }];
+
+      let vertex_buffer = Self::create_vertex_buffer(&context, &vertices);
+      let index_buffer = Self::create_index_buffer(&context, &indices, vk::BufferUsageFlags::STORAGE_BUFFER);
+      let colour_buffer = Self::create_colour_buffer(&context, &vertices);
+      let uv_buffer = Self::create_uv_buffer(&context, &vertices);
+      let nrm_buffer = Self::create_normal_buffer(&context, &vertices);
+      let tang_buffer = Self::create_tangent_buffer(&context, &vertices);
+
+      vertex_data = VertexData { vertex_buffer, index_buffer, colour_buffer, uv_buffer, nrm_buffer, tang_buffer };
+    }
 
     // Create the depth stencil
     let depth_image_data = {
@@ -231,16 +249,6 @@ impl Engine
     //=========== VERTEX TRANSFORMATION AND ATTRIBUTE INFORMATION AS GPU-ACCESSIBLE AND INDEXABLE BUFFERS ============//
     // Per-frame camera-based transformations
     let mvp_buffers = Self::create_uniform_buffers(&context, &options);
-
-    let vertex_buffer = Self::create_vertex_buffer(&context, &vertices);
-    
-    let index_buffer = Self::create_index_buffer(&context, &indices, vk::BufferUsageFlags::STORAGE_BUFFER);
-    
-    let colour_buffer = Self::create_colour_buffer(&context, &vertices);
-    let uv_buffer = Self::create_uv_buffer(&context, &vertices);
-    let nrm_buffer = Self::create_normal_buffer(&context, &vertices);
-
-    let vertex_data = VertexData { vertex_buffer, index_buffer, colour_buffer, uv_buffer, nrm_buffer };
 
     // Set limits on the number of descriptor sets that can be allocated at any time
     let descriptor_pool = Self::create_descriptor_pools(&context, &options);
@@ -1179,14 +1187,19 @@ impl Engine
       // Normals Buffer
       vk::DescriptorSetLayoutBinding::default().binding(4)
         .descriptor_type(vk::DescriptorType::STORAGE_BUFFER).descriptor_count(1)
-        .stage_flags(vk::ShaderStageFlags::COMPUTE),
-      // Storage Image read-only Sampler
+        .stage_flags(vk::ShaderStageFlags::COMPUTE | vk::ShaderStageFlags::FRAGMENT),
+      // Tangents Buffer
       vk::DescriptorSetLayoutBinding::default().binding(5)
+        .descriptor_type(vk::DescriptorType::STORAGE_BUFFER).descriptor_count(1)
+        .stage_flags(vk::ShaderStageFlags::COMPUTE | vk::ShaderStageFlags::FRAGMENT),
+      // Storage Image read-only Sampler
+      vk::DescriptorSetLayoutBinding::default().binding(6)
         .descriptor_type(vk::DescriptorType::SAMPLER).descriptor_count(1)
         .stage_flags(vk::ShaderStageFlags::FRAGMENT)
     ];
 
     let binding_flags = [
+      vk::DescriptorBindingFlags::UPDATE_AFTER_BIND,
       vk::DescriptorBindingFlags::UPDATE_AFTER_BIND,
       vk::DescriptorBindingFlags::UPDATE_AFTER_BIND,
       vk::DescriptorBindingFlags::UPDATE_AFTER_BIND,
@@ -1340,6 +1353,8 @@ impl Engine
       vk::DescriptorPoolSize::default().ty(vk::DescriptorType::STORAGE_BUFFER).descriptor_count(descriptor_count),
       // Normal Buffer
       vk::DescriptorPoolSize::default().ty(vk::DescriptorType::STORAGE_BUFFER).descriptor_count(descriptor_count),
+      // Tangent Buffer
+      vk::DescriptorPoolSize::default().ty(vk::DescriptorType::STORAGE_BUFFER).descriptor_count(descriptor_count),
       // Compute Output Image Sampler
       vk::DescriptorPoolSize::default().ty(vk::DescriptorType::SAMPLER).descriptor_count(descriptor_count),
       // Material Texture Sampler
@@ -1380,6 +1395,7 @@ impl Engine
     let colour_buffer = vertex_data.colour_buffer.0;
     let uv_buffer = vertex_data.uv_buffer.0;
     let normal_buffer = vertex_data.nrm_buffer.0;
+    let tangent_buffer = vertex_data.tang_buffer.0;
 
     // STANDARD 3D MODELS
     // Shader Resources
@@ -1398,7 +1414,7 @@ impl Engine
     };
 
     for i in 0..options.frames_in_flight {
-      let (mvp_buffer_info, index_buffer_info, colour_buffer_info, uv_buffer_info, norms_buffer_info) = {
+      let (mvp_buffer_info, index_buffer_info, colour_buffer_info, uv_buffer_info, norms_buffer_info, tang_buffer_info) = {
         (
           [vk::DescriptorBufferInfo::default().buffer(mvp_buffers[i].0)
             .offset(0).range(size_of::<MVP>().try_into().unwrap())],
@@ -1409,11 +1425,13 @@ impl Engine
           [vk::DescriptorBufferInfo::default().buffer(uv_buffer)
             .offset(0).range(size_of::<glm::Vec2>() as vk::DeviceSize * vertices.len() as vk::DeviceSize)],
           [vk::DescriptorBufferInfo::default().buffer(normal_buffer)
+            .offset(0).range(size_of::<glm::Vec4>() as vk::DeviceSize * vertices.len() as vk::DeviceSize)],
+          [vk::DescriptorBufferInfo::default().buffer(tangent_buffer)
             .offset(0).range(size_of::<glm::Vec4>() as vk::DeviceSize * vertices.len() as vk::DeviceSize)]
         )
       };
           
-      let (mvp_write, indices_write, colours_write, uvs_write, norms_write) = {
+      let (mvp_write, indices_write, colours_write, uvs_write, norms_write, tang_write) = {
         (
           vk::WriteDescriptorSet::default().dst_set(global_descriptor_sets[i]).dst_binding(0).dst_array_element(0)
             .descriptor_count(1).descriptor_type(vk::DescriptorType::UNIFORM_BUFFER).buffer_info(&mvp_buffer_info),
@@ -1424,7 +1442,9 @@ impl Engine
           vk::WriteDescriptorSet::default().dst_set(global_descriptor_sets[i]).dst_binding(3).dst_array_element(0)
             .descriptor_count(1).descriptor_type(vk::DescriptorType::STORAGE_BUFFER).buffer_info(&uv_buffer_info),
           vk::WriteDescriptorSet::default().dst_set(global_descriptor_sets[i]).dst_binding(4).dst_array_element(0)
-            .descriptor_count(1).descriptor_type(vk::DescriptorType::STORAGE_BUFFER).buffer_info(&norms_buffer_info)
+            .descriptor_count(1).descriptor_type(vk::DescriptorType::STORAGE_BUFFER).buffer_info(&norms_buffer_info),
+          vk::WriteDescriptorSet::default().dst_set(global_descriptor_sets[i]).dst_binding(5).dst_array_element(0)
+            .descriptor_count(1).descriptor_type(vk::DescriptorType::STORAGE_BUFFER).buffer_info(&tang_buffer_info)
         )
       };
 
@@ -1433,7 +1453,8 @@ impl Engine
         colours_write,
         indices_write, 
         uvs_write,
-        norms_write
+        norms_write,
+        tang_write
       ];
 
       // Write the descriptor sets to the GPU
@@ -2039,6 +2060,14 @@ impl Engine
     return Self::create_buffer_from_vector(context, &norms, usage_flags);
   }
 
+  fn create_tangent_buffer(context: &EngineContext, verts: &Vec<Vertex>) -> (vk::Buffer, vk::DeviceMemory)
+  {
+    let tangents: Vec<glm::Vec4> = verts.iter().map(|v| v.tang).collect();
+
+    let usage_flags = vk::BufferUsageFlags::STORAGE_BUFFER | vk::BufferUsageFlags::TRANSFER_DST;
+    return Self::create_buffer_from_vector(context, &tangents, usage_flags);
+  }
+
   // Use the Slang Compilation API to compile slang shaders to SPIR-V during and by the application
   pub fn compile_shader(context: &EngineContext, src: &Path, dst: &Path)
   {
@@ -2447,7 +2476,7 @@ impl Engine
     };
   }
 
-  fn component_size(component_type: ComponentType) -> anyhow::Result<usize> 
+  pub fn component_size(component_type: ComponentType) -> anyhow::Result<usize> 
   {
     match component_type {
       ComponentType::Byte => Ok(size_of::<i8>()),
@@ -2528,7 +2557,7 @@ impl Engine
     Ok(result)
   }
 
-  pub fn load_gltf(context: &EngineContext, vertices: &mut Vec<Vertex>, indices: &mut Vec<u32>, submeshes: &mut Vec<SubMesh>, vertex_data: &mut VertexData, path: &PathBuf, gltf_replace_mode: bool) -> anyhow::Result<()>
+  pub fn load_gltf(context: &EngineContext, vertices: &mut Vec<Vertex>, indices: &mut Vec<u32>, submeshes: &mut Vec<SubMesh>, vertex_data: &VertexData, path: &PathBuf, gltf_replace_mode: bool) -> anyhow::Result<VertexData>
   {
     let (base, bin) = GltfDocument::load(path)?;
     let device = &context.device;
@@ -2559,14 +2588,16 @@ impl Engine
     unsafe { device.free_memory(vertex_data.uv_buffer.1, None); }
     unsafe { device.destroy_buffer(vertex_data.nrm_buffer.0, None); }
     unsafe { device.free_memory(vertex_data.nrm_buffer.1, None); }
+    unsafe { device.destroy_buffer(vertex_data.tang_buffer.0, None); }
+    unsafe { device.free_memory(vertex_data.tang_buffer.1, None); }
 
     let vertex_buffer = Self::create_vertex_buffer(&context, &vertices);
     let index_buffer = Self::create_index_buffer(&context, &indices, vk::BufferUsageFlags::STORAGE_BUFFER);
     let colour_buffer = Self::create_colour_buffer(&context, &vertices);
     let uv_buffer = Self::create_uv_buffer(&context, &vertices);
     let nrm_buffer = Self::create_normal_buffer(&context, &vertices);
-    *vertex_data = VertexData { vertex_buffer, index_buffer, colour_buffer, uv_buffer, nrm_buffer };
-    Ok(())
+    let tang_buffer = Self::create_tangent_buffer(&context, &vertices);
+    Ok(VertexData { vertex_buffer, index_buffer, colour_buffer, uv_buffer, nrm_buffer, tang_buffer })
   }
 
   pub fn load_geometry(base: &GltfDocument, bin: &Vec<Vec<u8>>, initial_v_offset: u32, initial_index_offset: u32) -> anyhow::Result<(Vec<Vertex>, Vec<u32>, Vec<SubMesh>)>
@@ -2725,17 +2756,59 @@ impl Engine
               }
             };
 
-            let default_colour = glm::make_vec3(&[1.0, 1.0, 1.0]);
-            let colour: Option<glm::Vec3> = match prim.material {
-              Some(mat_idx) => match &base.materials.as_ref() {
-                Some(materials) => match &materials[mat_idx].pbr_metallic_roughness {
-                  Some(pbr) => Some(glm::make_vec3(&pbr.base_color_factor[0..3])), None => None
-                },
-                None => None
+            let tangent_accessor: anyhow::Result<&Accessor> = match prim.attributes.get(&String::from("TANGENT")) {
+              Some(tangent_accessor_idx) => match accessors.get(*tangent_accessor_idx) { 
+                Some(v) => Ok(v), None => Err(GltfError::from("No tangents data found!").into())
               },
-              None => None
+              None => Err(GltfError::from("Invalid tangents accessor!").into())
             };
-              
+            let tangent_buffer_view: anyhow::Result<&BufferView> = match &tangent_accessor {
+              Ok(accessor) => match accessor.buffer_view { 
+                Some(v) => match buffer_views.get(v) { Some(v) => Ok(v), None => Err(GltfError::from("No buffer view found for tangents!").into())}, 
+                None => Err(GltfError::from("Accessor for tangents must have a defined buffer view!").into())
+              },
+              Err(e) => Err(GltfError::from(e.to_string()).into())
+            };
+
+            let tangent_buffer: anyhow::Result<&Vec<u8>> = match &tangent_buffer_view {
+              Ok(buffer_view) => Ok(&bin[buffer_view.buffer]),
+              Err(e) => Err(GltfError::from(e.to_string()).into())
+            };
+            let tangents: Vec<glm::Vec4> = match tangent_buffer {
+              Ok(buffer) => Self::parse_accessor(tangent_accessor.unwrap(), tangent_buffer_view.unwrap(), &buffer)?.chunks_exact(4)
+                .map(|chunk| glm::make_vec4(&chunk)).collect(),
+              Err(e) => {
+                println!("{}", e.to_string());
+                vec![glm::vec4(0.0, 0.0, 0.0, 1.0); positions.len()]
+              }
+            };
+
+            let colours_accessor: anyhow::Result<&Accessor> = match prim.attributes.get(&String::from("COLOR_0")) {
+              Some(colours_accessor_idx) => match accessors.get(*colours_accessor_idx) { 
+                Some(v) => Ok(v), None => Err(GltfError::from("No vertex colours data found!").into())
+              },
+              None => Err(GltfError::from("Invalid colors accessor!").into())
+            };
+            let colours_buffer_view: anyhow::Result<&BufferView> = match &colours_accessor {
+              Ok(accessor) => match accessor.buffer_view { 
+                Some(v) => match buffer_views.get(v) { Some(v) => Ok(v), None => Err(GltfError::from("No buffer view found for vertex colours!").into())}, 
+                None => Err(GltfError::from("Accessor for vertex colours must have a defined buffer view!").into())
+              },
+              Err(e) => Err(GltfError::from(e.to_string()).into())
+            };
+
+            let colours_buffer: anyhow::Result<&Vec<u8>> = match &colours_buffer_view {
+              Ok(buffer_view) => Ok(&bin[buffer_view.buffer]),
+              Err(e) => Err(GltfError::from(e.to_string()).into())
+            };
+            let cols: Vec<glm::Vec3> = match colours_buffer {
+              Ok(buffer) => Self::parse_accessor(colours_accessor.unwrap(), colours_buffer_view.unwrap(), &buffer)?.chunks_exact(3)
+                .map(|chunk| glm::make_vec3(&chunk)).collect(),
+              Err(e) => {
+                println!("{}", e.to_string());
+                vec![glm::vec3(1.0, 1.0, 1.0); positions.len()]
+              }
+            };
 
             // Get the model's scale
             let translation: glm::Vec3 = glm::make_vec3(&node.translation);
@@ -2756,8 +2829,9 @@ impl Engine
               vertices.push(Vertex {
                 pos: glm::vec3(transformed_pos.x, transformed_pos.y, transformed_pos.z),
                 tex_coord: uvs[i],
-                colour: match colour { Some(v) => v, None => default_colour },
-                norm: norms[i]
+                colour: cols[i],
+                norm: norms[i],
+                tang: tangents[i]
               });
             }
 

@@ -149,6 +149,7 @@ pub struct VertexData {
   colour_buffer: (vk::Buffer, vk::DeviceMemory),
   uv_buffer: (vk::Buffer, vk::DeviceMemory),
   nrm_buffer: (vk::Buffer, vk::DeviceMemory),
+  tang_buffer: (vk::Buffer, vk::DeviceMemory)
 }
 
 #[derive(Default)]

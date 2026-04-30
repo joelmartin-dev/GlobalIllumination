@@ -15,7 +15,7 @@ use enums::{
 };
 use methods::{
   default_base_color_factor, default_emissive_factor, default_mesh_primitive_mode, 
-  default_f32_1, default_f32_half, default_matrix,
+  default_f32_1, default_f32_half, default_f32_0, default_matrix,
   default_rotation, default_scale, default_translation,
   serialize_to_u64, serialize_option_to_u64, serialize_to_str, serialize_option_to_str,
   deserialize_from_usize_to_enum, deserialize_from_option_usize_to_enum,
@@ -115,10 +115,18 @@ impl Validatable for GltfDocument {
   fn is_valid(&self, _base: &GltfDocument) -> anyhow::Result<()> {
     if let Some(ext_used)     = &self.extensions_used     { check_if_empty(ext_used,      "extensionsUsed"    )? ; 
                                                             check_for_dup_items(ext_used, "extensionsUsed"    )? ;
-                                                            Err(GltfError::from(format!("Unsupported extensions found: {:?}", ext_used)))? }
+                                                            match ["KHR_materials_anisotropy"].iter().any(|ext| ext_used.iter().any(|used_ext| ext == used_ext)) {
+                                                              true => (),
+                                                              false => Err(GltfError::from(format!("Unsupported extensions found: {:?}", ext_used)))? 
+                                                            }
+                                                            }
     if let Some(ext_req)      = &self.extensions_required { check_if_empty(ext_req,       "extensionsRequired")? ; 
                                                             check_for_dup_items(ext_req,  "extensionsRequired")? ;
-                                                            Err(GltfError::from(format!("Unsupported extensions found: {:?}", ext_req)))?  }
+                                                            match ["KHR_materials_anisotropy"].iter().any(|ext| ext_req.iter().any(|req_ext| ext == req_ext)) {
+                                                              true => (),
+                                                              false => Err(GltfError::from(format!("Unsupported extensions found: {:?}", ext_req)))?  
+                                                            }
+                                                            }
     if let Some(accessors)    = &self.accessors           { check_if_empty(accessors,     "accessors"         )? }
     if let Some(animations)   = &self.animations          { check_if_empty(animations,    "animations"        )? }
     if let Some(buffers)      = &self.buffers             { check_if_empty(buffers,       "buffers"           )? }
@@ -512,7 +520,7 @@ pub struct Material {
   #[serde(rename = "doubleSided", default)]
   pub double_sided: bool, // default: false
   pub name: Option<String>,
-  pub extensions: Option<Extension>,
+  pub extensions: Option<MaterialExtension>,
   pub extras: Option<Extra>,
 }
 impl Validatable for Material {
@@ -754,6 +762,14 @@ impl Validatable for Texture {
 
 #[derive(Serialize, Deserialize, Debug)]
 pub struct Extension {
+  #[serde(flatten)]
+  pub additional_properties: Map<String, Value>
+}
+
+#[derive(Serialize, Deserialize, Debug)]
+pub struct MaterialExtension {
+  #[serde(rename = "KHR_materials_anisotropy", default)]
+  pub khr_materials_anisotropy: Option<KhrMaterialsAnisotropy>,
   #[serde(flatten)]
   pub additional_properties: Map<String, Value>
 }
@@ -1184,5 +1200,21 @@ impl Validatable for MeshPrimitive {
     if let Some(material) = self.material { check_items_for_min_val(&[material], 0, "mesh.primitive.material")? };
     if let Some(targets) = &self.targets { check_if_empty(targets, "mesh.primitive.targets")? }
     Ok(())
+  }
+}
+
+// Extensions
+#[derive(Serialize, Deserialize, Debug)]
+pub struct KhrMaterialsAnisotropy {
+  #[serde(rename = "anisotropyStrength", default = "default_f32_0")]
+  anisotropy_strength: f32,
+  #[serde(rename = "anisotropyRotation", default = "default_f32_0")]
+  anisotropy_rotation: f32,
+  #[serde(rename = "anisotropyTexture", default)]
+  anisotropy_texture: Option<TextureInfo>
+}
+impl Validatable for KhrMaterialsAnisotropy {
+  fn is_valid(&self, base: &GltfDocument) -> anyhow::Result<()> {
+      Ok(())
   }
 }

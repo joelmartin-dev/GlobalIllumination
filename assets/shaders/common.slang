@@ -6,6 +6,7 @@ public struct VSInput {
     public float2 inTexCoord;
     public float3 inColor;
     public float3 inNormal;
+    public float4 inTangent;
 };
 
 // Internal struct for passing attributes to fragment shader
@@ -14,6 +15,7 @@ public struct VSOutput {
     public float2 fragTexCoord;
     public float3 fragColor;
     public float3 fragNormal;
+    public float4 fragTangent;
     public float3 worldPos;
 };
 
@@ -39,8 +41,11 @@ public struct CameraTransforms {
 // the normals of each vertex in the scene
 [[vk::binding(4, 0)]] public StructuredBuffer<float4> nrmBuffer;
 
+// the normals of each vertex in the scene
+[[vk::binding(5, 0)]] public StructuredBuffer<float4> tangBuffer;
+
 // Sampler of the written-to image
-[[vk::binding(5, 0)]] public SamplerState sampler;
+[[vk::binding(6, 0)]] public SamplerState sampler;
 
 // Write access to StorageImages
 [vk_image_format("rgba32f")]

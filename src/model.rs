@@ -14,11 +14,11 @@ lazy_static! {
     // Double the width and double the height of the viewport
     vertices: vec![
       Vertex {pos: glm::vec3(-1.0, -1.0, -0.0), tex_coord: glm::vec2(0.0, 0.0), 
-        colour: glm::vec3(1.0, 0.0, 0.0), norm: glm::vec3(0.0, 0.0, 0.0)},
+        colour: glm::vec3(1.0, 0.0, 0.0), norm: glm::vec3(0.0, 0.0, 0.0), tang: glm::vec4(0.0, 0.0, 0.0, 1.0)},
       Vertex {pos: glm::vec3(-1.0, 3.0, -0.0), tex_coord: glm::vec2(0.0, 2.0), 
-        colour: glm::vec3(1.0, 1.0, 1.0), norm: glm::vec3(0.0, 0.0, 0.0)},
+        colour: glm::vec3(1.0, 1.0, 1.0), norm: glm::vec3(0.0, 0.0, 0.0), tang: glm::vec4(0.0, 0.0, 0.0, 1.0)},
       Vertex {pos: glm::vec3(3.0, -1.0, -0.0), tex_coord: glm::vec2(2.0, 0.0), 
-        colour: glm::vec3(0.0, 1.0, 0.0), norm: glm::vec3(0.0, 0.0, 0.0)}
+        colour: glm::vec3(0.0, 1.0, 0.0), norm: glm::vec3(0.0, 0.0, 0.0), tang: glm::vec4(0.0, 0.0, 0.0, 1.0)}
     ],
     indices: vec![0, 1, 2]
   };
@@ -26,13 +26,13 @@ lazy_static! {
   pub static ref QUAD: Mesh = Mesh {
     vertices: vec![
       Vertex {pos: glm::vec3(-0.5, -0.5, 0.0), tex_coord: glm::vec2(0.0, 0.0), 
-        colour: glm::vec3(0.0, 0.0, 0.0), norm: glm::vec3(0.0, 0.0, 0.0)},
+        colour: glm::vec3(0.0, 0.0, 0.0), norm: glm::vec3(0.0, 0.0, 0.0), tang: glm::vec4(0.0, 0.0, 0.0, 1.0)},
       Vertex {pos: glm::vec3(-0.5, 0.5, 0.0), tex_coord: glm::vec2(1.0, 0.0), 
-        colour: glm::vec3(1.0, 0.0, 0.0), norm: glm::vec3(0.0, 0.0, 0.0)},
+        colour: glm::vec3(1.0, 0.0, 0.0), norm: glm::vec3(0.0, 0.0, 0.0), tang: glm::vec4(0.0, 0.0, 0.0, 1.0)},
       Vertex {pos: glm::vec3(0.5, -0.5, 0.0), tex_coord: glm::vec2(0.0, 1.0), 
-        colour: glm::vec3(0.0, 1.0, 0.0), norm: glm::vec3(0.0, 0.0, 0.0)},
+        colour: glm::vec3(0.0, 1.0, 0.0), norm: glm::vec3(0.0, 0.0, 0.0), tang: glm::vec4(0.0, 0.0, 0.0, 1.0)},
       Vertex {pos: glm::vec3(0.5, 0.5, 0.0), tex_coord: glm::vec2(1.0, 1.0), 
-        colour: glm::vec3(1.0, 1.0, 0.0), norm: glm::vec3(0.0, 0.0, 0.0)}
+        colour: glm::vec3(1.0, 1.0, 0.0), norm: glm::vec3(0.0, 0.0, 0.0), tang: glm::vec4(0.0, 0.0, 0.0, 1.0)}
     ],
     indices: vec![0, 1, 2, 2, 1, 3]
   };
@@ -40,21 +40,21 @@ lazy_static! {
   pub static ref CUBE: Mesh = Mesh {
     vertices: vec![
       Vertex {pos: glm::vec3(-1.0, -1.0, -1.0), tex_coord: glm::vec2(0.0, 0.0), 
-        colour: glm::vec3(1.0, 1.0, 1.0), norm: glm::vec3(0.0, 0.0, 0.0)},
+        colour: glm::vec3(1.0, 1.0, 1.0), norm: glm::vec3(0.0, 0.0, 0.0), tang: glm::vec4(0.0, 0.0, 0.0, 1.0)},
       Vertex {pos: glm::vec3(-1.0, -1.0, 1.0), tex_coord: glm::vec2(0.0, 1.0), 
-        colour: glm::vec3(1.0, 1.0, 1.0), norm: glm::vec3(0.0, 0.0, 0.0)},
+        colour: glm::vec3(1.0, 1.0, 1.0), norm: glm::vec3(0.0, 0.0, 0.0), tang: glm::vec4(0.0, 0.0, 0.0, 1.0)},
       Vertex {pos: glm::vec3(-1.0, 1.0, -1.0), tex_coord: glm::vec2(1.0, 0.0), 
-        colour: glm::vec3(1.0, 1.0, 1.0), norm: glm::vec3(0.0, 0.0, 0.0)},
+        colour: glm::vec3(1.0, 1.0, 1.0), norm: glm::vec3(0.0, 0.0, 0.0), tang: glm::vec4(0.0, 0.0, 0.0, 1.0)},
       Vertex {pos: glm::vec3(-1.0, 1.0, 1.0), tex_coord: glm::vec2(1.0, 1.0), 
-        colour: glm::vec3(1.0, 1.0, 1.0), norm: glm::vec3(0.0, 0.0, 0.0)},
+        colour: glm::vec3(1.0, 1.0, 1.0), norm: glm::vec3(0.0, 0.0, 0.0), tang: glm::vec4(0.0, 0.0, 0.0, 1.0)},
       Vertex {pos: glm::vec3(1.0, -1.0, -1.0), tex_coord: glm::vec2(1.0, 0.0), 
-        colour: glm::vec3(1.0, 1.0, 1.0), norm: glm::vec3(0.0, 0.0, 0.0)},
+        colour: glm::vec3(1.0, 1.0, 1.0), norm: glm::vec3(0.0, 0.0, 0.0), tang: glm::vec4(0.0, 0.0, 0.0, 1.0)},
       Vertex {pos: glm::vec3(1.0, -1.0, 1.0), tex_coord: glm::vec2(1.0, 1.0), 
-        colour: glm::vec3(1.0, 1.0, 1.0), norm: glm::vec3(0.0, 0.0, 0.0)},
+        colour: glm::vec3(1.0, 1.0, 1.0), norm: glm::vec3(0.0, 0.0, 0.0), tang: glm::vec4(0.0, 0.0, 0.0, 1.0)},
       Vertex {pos: glm::vec3(1.0, 1.0, -1.0), tex_coord: glm::vec2(0.0, 0.0), 
-        colour: glm::vec3(1.0, 1.0, 1.0), norm: glm::vec3(0.0, 0.0, 0.0)},
+        colour: glm::vec3(1.0, 1.0, 1.0), norm: glm::vec3(0.0, 0.0, 0.0), tang: glm::vec4(0.0, 0.0, 0.0, 1.0)},
       Vertex {pos: glm::vec3(1.0, 1.0, 1.0), tex_coord: glm::vec2(0.0, 1.0), 
-        colour: glm::vec3(1.0, 1.0, 1.0), norm: glm::vec3(0.0, 0.0, 0.0)}
+        colour: glm::vec3(1.0, 1.0, 1.0), norm: glm::vec3(0.0, 0.0, 0.0), tang: glm::vec4(0.0, 0.0, 0.0, 1.0)}
     ],
     indices: vec![
       0, 1, 2, 2, 1, 3,
