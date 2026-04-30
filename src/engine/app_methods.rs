@@ -91,9 +91,15 @@ impl ApplicationHandler for App {
           self.window.as_ref().unwrap().request_redraw();
         },
         WindowEvent::DroppedFile(path) => {
-          match engine.load_gltf(&path) {
-            Err(e) => println!("{}", e.to_string()),
-            _ => println!("Loaded: {:?}", path)
+          let engine = self.engine.as_mut().unwrap();
+          let mut context = engine.context.as_mut().unwrap();
+          let mut vertices = engine.vertices.as_mut();
+          let mut indices = engine.indices.as_mut();
+          let mut submeshes = engine.submeshes.as_mut();
+          let mut vertex_data = &mut engine.vertex_data;
+          match Engine::load_gltf(&mut context, &mut vertices, &mut indices, &mut submeshes, &mut vertex_data, &path, engine.gltf_replace_mode) {
+            Err(e) => println!("Received error: {}", e.to_string()),
+            Ok(_) => println!("Loaded: {:?}", path)
           };
           self.window.as_ref().unwrap().request_redraw();
         }

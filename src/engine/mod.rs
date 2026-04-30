@@ -195,6 +195,7 @@ pub struct Engine {
   submeshes: Vec<SubMesh>,
   
   vertex_data: VertexData,  
+  gltf_replace_mode: bool,
   
   // create_indirect_commands
   // indirect_commands: Vec<vk::DrawIndexedIndirectCommand>,

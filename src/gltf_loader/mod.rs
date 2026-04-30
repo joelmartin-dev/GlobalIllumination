@@ -1,6 +1,6 @@
 pub mod enums;
 mod methods;
-mod test;
+pub mod test;
 pub mod error;
 
 use std::{collections::HashMap, fmt::{Debug, Display}};

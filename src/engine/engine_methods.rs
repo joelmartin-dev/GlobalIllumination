@@ -14,8 +14,9 @@ use crate::engine::{
   SHADER_ROOT_PATH, VALIDATION_LAYERS, VertexData
 };
 use crate::camera::Camera;
+use crate::gltf_loader::test::PATHS;
 use crate::gltf_loader::{Accessor, BufferView};
-use crate::gltf_loader::enums::{AccessorType, ComponentType};
+use crate::gltf_loader::enums::{AccessorType, ComponentType, MaterialAlphaMode};
 use crate::gltf_loader::{GltfDocument, error::GltfError};
 use crate::model::CUBE;
 use crate::vertex::Vertex;
@@ -173,12 +174,28 @@ impl Engine
       ImageData { images: vec![image], views: vec![view], sampler: Some(Self::create_texture_sampler(&context)) }
     };
 
-    let vertices: Vec<Vertex> = CUBE.vertices.clone();
-    let indices: Vec<u32> = CUBE.indices.clone();
-    let submeshes = vec![SubMesh {
-      index_offset: 0, index_count: indices.len() as u32, material_id: 0, 
-      first_vertex: 0, max_vertex: vertices.len() as u32, alpha_cut: vk::FALSE
-    }];
+    // let vertices: Vec<Vertex> = CUBE.vertices.clone();
+    // let indices: Vec<u32> = CUBE.indices.clone();
+    // let submeshes = vec![SubMesh {
+    //   index_offset: 0, index_count: indices.len() as u32, material_id: 0, 
+    //   first_vertex: 0, max_vertex: vertices.len() as u32, alpha_cut: vk::FALSE
+    // }];
+
+    let mut vertices: Vec<Vertex> = Vec::new();
+    let mut indices: Vec<u32> = Vec::new();
+    let mut submeshes: Vec<SubMesh> = Vec::new();
+    let vertex_data = &mut VertexData { vertex_buffer: (vk::Buffer::null(), vk::DeviceMemory::null()), index_buffer: (vk::Buffer::null(), vk::DeviceMemory::null()), colour_buffer: (vk::Buffer::null(), vk::DeviceMemory::null()), uv_buffer: (vk::Buffer::null(), vk::DeviceMemory::null()), nrm_buffer: (vk::Buffer::null(), vk::DeviceMemory::null()) };
+
+    PATHS[49..50].iter().for_each(|&path| {
+      let prefix = std::env::var("GLTF_PREFIX").unwrap();
+      let prefix_path = PathBuf::from(prefix);
+      let p = PathBuf::from(path);
+      let joined_p = prefix_path.join(p);
+      match Self::load_gltf(&context, &mut vertices, &mut indices, &mut submeshes, vertex_data, &joined_p, false) {
+        Err(e) => println!("Received error: {}", e.to_string()),
+        Ok(_) => println!("Loaded: {:?}", path)
+      }
+    });
 
     // Create the depth stencil
     let depth_image_data = {
@@ -264,6 +281,7 @@ impl Engine
       indices,
       submeshes,
       vertex_data,
+      gltf_replace_mode: true,
       // indirect_commands: Default::default(),
       // indirect_commands_buffer: Default::default(),
       descriptor_pool,
@@ -1459,7 +1477,7 @@ impl Engine
 
 
   fn setup_imgui_frame(
-    debug_gui_context: &mut DebugGuiContext, camera: &mut Camera, window: &Window
+    debug_gui_context: &mut DebugGuiContext, camera: &mut Camera, window: &Window, gltf_replace_mode: &mut bool
   )
   {
     let imgui = &mut debug_gui_context.imgui;
@@ -1499,6 +1517,11 @@ impl Engine
 
         ui.spacing();
 
+        ui.slider("Near Plane", 0.01, 100.0, &mut camera.near_plane);
+        ui.slider("Far Plane", 10.0, 1000.0, &mut camera.far_plane);
+
+        ui.spacing();
+
         ui.slider("Speed Mod", 0.01, 4.0, &mut camera.shift_speed);
         // ImGui::SliderInt("Delta Mult", &deltaExp, 0, 32);
       };
@@ -1513,6 +1536,7 @@ impl Engine
       .position([1110.0, 20.0], Condition::FirstUseEver)
       .begin()
       {
+        ui.checkbox("Replace Geometry", gltf_replace_mode);
         ui.input_text("Slang Path", &mut debug_gui_context.slang_path).build();
         ui.input_text("SPIR-V Path", &mut debug_gui_context.spirv_path).build();
         ui.input_text_multiline("Slang Content", &mut debug_gui_context.slang_content, ui.content_region_avail()).build();
@@ -1545,7 +1569,7 @@ impl Engine
 
     let debug_gui_context = self.debug_gui_context.as_mut().unwrap();
     let camera = &mut self.camera;
-    Self::setup_imgui_frame(debug_gui_context, camera, window);
+    Self::setup_imgui_frame(debug_gui_context, camera, window, &mut self.gltf_replace_mode);
     
     let imgui = &mut debug_gui_context.imgui;
     let draw_data = imgui.render();
@@ -2504,27 +2528,48 @@ impl Engine
     Ok(result)
   }
 
-  pub fn load_gltf(&mut self, path: &PathBuf) -> anyhow::Result<()>
+  pub fn load_gltf(context: &EngineContext, vertices: &mut Vec<Vertex>, indices: &mut Vec<u32>, submeshes: &mut Vec<SubMesh>, vertex_data: &mut VertexData, path: &PathBuf, gltf_replace_mode: bool) -> anyhow::Result<()>
   {
     let (base, bin) = GltfDocument::load(path)?;
-    if let Some(context) = &self.context {
-      let _ = unsafe { context.device.queue_wait_idle(context.queue)? };
-    };
-    let (vertices, indices, submeshes) = Self::load_geometry(&base, &bin)?;
+    let device = &context.device;
+    let queue = context.queue;
+    unsafe { device.queue_wait_idle(queue)? };
 
-    self.vertices = vertices; self.indices = indices; self.submeshes = submeshes;
+    if gltf_replace_mode {
+      let (loaded_vertices, loaded_indices, loaded_submeshes) = Self::load_geometry(
+        &base, &bin, 0, 0)?;
+  
+      *vertices = loaded_vertices; *indices = loaded_indices; *submeshes = loaded_submeshes;
+    }
+    else
+    {
+      let (loaded_vertices, loaded_indices, loaded_submeshes) = Self::load_geometry(
+        &base, &bin, u32::try_from(vertices.len())?, u32::try_from(indices.len())?)?;
+  
+      vertices.extend(loaded_vertices); indices.extend(loaded_indices); submeshes.extend(loaded_submeshes);
+    }
 
-    let context = self.context.as_mut().unwrap();
-    let vertex_buffer = Self::create_vertex_buffer(&context, &self.vertices);
-    let index_buffer = Self::create_index_buffer(&context, &self.indices, vk::BufferUsageFlags::STORAGE_BUFFER);
-    let colour_buffer = Self::create_colour_buffer(&context, &self.vertices);
-    let uv_buffer = Self::create_uv_buffer(&context, &self.vertices);
-    let nrm_buffer = Self::create_normal_buffer(&context, &self.vertices);
-    self.vertex_data = VertexData { vertex_buffer, index_buffer, colour_buffer, uv_buffer, nrm_buffer };
+    unsafe { device.destroy_buffer(vertex_data.vertex_buffer.0, None); }
+    unsafe { device.free_memory(vertex_data.vertex_buffer.1, None); }
+    unsafe { device.destroy_buffer(vertex_data.index_buffer.0, None); }
+    unsafe { device.free_memory(vertex_data.index_buffer.1, None); }
+    unsafe { device.destroy_buffer(vertex_data.colour_buffer.0, None); }
+    unsafe { device.free_memory(vertex_data.colour_buffer.1, None); }
+    unsafe { device.destroy_buffer(vertex_data.uv_buffer.0, None); }
+    unsafe { device.free_memory(vertex_data.uv_buffer.1, None); }
+    unsafe { device.destroy_buffer(vertex_data.nrm_buffer.0, None); }
+    unsafe { device.free_memory(vertex_data.nrm_buffer.1, None); }
+
+    let vertex_buffer = Self::create_vertex_buffer(&context, &vertices);
+    let index_buffer = Self::create_index_buffer(&context, &indices, vk::BufferUsageFlags::STORAGE_BUFFER);
+    let colour_buffer = Self::create_colour_buffer(&context, &vertices);
+    let uv_buffer = Self::create_uv_buffer(&context, &vertices);
+    let nrm_buffer = Self::create_normal_buffer(&context, &vertices);
+    *vertex_data = VertexData { vertex_buffer, index_buffer, colour_buffer, uv_buffer, nrm_buffer };
     Ok(())
   }
 
-  pub fn load_geometry(base: &GltfDocument, bin: &Vec<Vec<u8>>) -> anyhow::Result<(Vec<Vertex>, Vec<u32>, Vec<SubMesh>)>
+  pub fn load_geometry(base: &GltfDocument, bin: &Vec<Vec<u8>>, initial_v_offset: u32, initial_index_offset: u32) -> anyhow::Result<(Vec<Vertex>, Vec<u32>, Vec<SubMesh>)>
   {
     let mut vertices: Vec<Vertex> = vec![];
     let mut indices: Vec<u32> = vec![];
@@ -2538,187 +2583,202 @@ impl Engine
       Some(buffer_views) => buffer_views,
       None => Err(GltfError::from("Document needs buffer views to get mesh data!"))?
     };
-    if let Some(meshes) = &base.meshes {
-      let _result = meshes.iter().try_for_each(|mesh| -> anyhow::Result<()> {
-        let _ = mesh.primitives.iter().try_for_each(|prim| -> anyhow::Result<()> {
-          let mut index_offset: u32 = indices.len().try_into()?;
+    let meshes = match base.meshes.as_ref() {
+      Some(meshes) => meshes,
+      None => Err(GltfError::from("Document needs meshes to get mesh data!"))?
+    };
+    if let Some(nodes) = &base.nodes {
+      let _ = nodes.iter().try_for_each(|node| -> anyhow::Result<()> {
+        if let Some(mesh_idx) = node.mesh {
+          let mesh = match meshes.get(mesh_idx) { Some(v) => v, None => Err(GltfError::from("Mesh does not exist!"))?};
+          let _ = mesh.primitives.iter().try_for_each(|prim| -> anyhow::Result<()> {
+            let mut index_offset: u32 = initial_index_offset + u32::try_from(indices.len())?;
 
-          let start_offset: u32 = index_offset;
-          // v_offset will help in evaluating the absolute value of this primitives indices so they match up with the
-          // correct vertices in the vertex buffer
-          let v_offset: u32 = vertices.len().try_into()?;
-          let pos_accessor = match prim.attributes.get(&String::from("POSITION")) {
-            Some(pos_accessor_idx) => match accessors.get(*pos_accessor_idx) { 
-              Some(v) => v, None => Err(GltfError::from("No positions data found!"))?
-            },
-            None => Err(GltfError::from("Primitives must have at least positions defined!"))?
-          };
-          let pos_buffer_view = match pos_accessor.buffer_view { 
-            Some(v) => match buffer_views.get(v) { Some(v) => v, None => Err(GltfError::from("No buffer view found for positions!"))?}, 
-            None => Err(GltfError::from("Accessor for vertex positions must have a defined buffer view!"))?
-          };
-          let pos_buffer = &bin[pos_buffer_view.buffer];
-          let positions: Vec<glm::Vec3> = Self::parse_accessor(&pos_accessor, &pos_buffer_view, &pos_buffer)?.chunks_exact(3)
-            .map(|chunk| glm::make_vec3(&chunk)).collect();
-
-          // Get the accessor for where the primitive stores its indices
-          if let Some(indices_accessor_index) = prim.indices {
-            let indices_accessor = &accessors[indices_accessor_index];
-            let indices_accessor_byte_offset = indices_accessor.byte_offset.unwrap_or(0);
-            let indices_component_type = indices_accessor.component_type;
-            let indices_buffer_byte_length = indices_accessor.count * match indices_component_type {
-              ComponentType::UnsignedByte => { size_of::<u8>() },
-              ComponentType::UnsignedShort => { size_of::<u16>() },
-              ComponentType::UnsignedInt => { size_of::<u32>() }
-              _ => Err(GltfError::from("incompatible component type"))?
+            let start_offset: u32 = index_offset;
+            // v_offset will help in evaluating the absolute value of this primitives indices so they match up with the
+            // correct vertices in the vertex buffer
+            let v_offset: u32 = initial_v_offset + u32::try_from(vertices.len())?;
+            let pos_accessor = match prim.attributes.get(&String::from("POSITION")) {
+              Some(pos_accessor_idx) => match accessors.get(*pos_accessor_idx) { 
+                Some(v) => v, None => Err(GltfError::from("No positions data found!"))?
+              },
+              None => Err(GltfError::from("Primitives must have at least positions defined!"))?
             };
-            let indices_buffer_view = &buffer_views[match indices_accessor.buffer_view {
-              Some(v) => v,
-              None => Err(GltfError::from("Accessors for mesh indices must have a defined buffer view!"))?
-            }];
-            let indices_buffer_byte_offset = indices_buffer_view.byte_offset.unwrap_or(0) + indices_accessor_byte_offset;
-            let indices_buffer = &bin[indices_buffer_view.buffer]
-              [indices_buffer_byte_offset..indices_buffer_byte_offset+indices_buffer_byte_length];
+            let pos_buffer_view = match pos_accessor.buffer_view { 
+              Some(v) => match buffer_views.get(v) { Some(v) => v, None => Err(GltfError::from("No buffer view found for positions!"))?}, 
+              None => Err(GltfError::from("Accessor for vertex positions must have a defined buffer view!"))?
+            };
+            let pos_buffer = &bin[pos_buffer_view.buffer];
+            let positions: Vec<glm::Vec3> = Self::parse_accessor(&pos_accessor, &pos_buffer_view, &pos_buffer)?.chunks_exact(3)
+              .map(|chunk| glm::make_vec3(&chunk)).collect();
 
-            let prim_indices: Vec<u32> = match indices_component_type {
-              ComponentType::UnsignedByte => {
-                indices_buffer.iter().map(|&byte| (byte as u32) + v_offset).collect()
-              },
-              ComponentType::UnsignedShort => {
-                indices_buffer.chunks_exact(size_of::<u16>()).map(|chunk| 
-                  (u16::from_le_bytes(chunk.try_into().unwrap()) as u32) + v_offset).collect()
-              },
-              ComponentType::UnsignedInt => {
-                indices_buffer.chunks_exact(size_of::<u32>()).map(|chunk| 
-                  u32::from_le_bytes(chunk.try_into().unwrap()) + v_offset).collect()
-              },
-              _ => { Err(GltfError::from("incompatible indices component type!"))? }
-            };        
+            let material = match base.materials.as_ref() {
+                Some(materials) => match prim.material {
+                  Some(mat_idx) => materials.get(mat_idx), None => None
+                },
+                None => None
+              };
+            // Get the accessor for where the primitive stores its indices
+            if let Some(indices_accessor_index) = prim.indices {
+              let indices_accessor = &accessors[indices_accessor_index];
+              let indices_accessor_byte_offset = indices_accessor.byte_offset.unwrap_or(0);
+              let indices_component_type = indices_accessor.component_type;
+              let indices_buffer_byte_length = indices_accessor.count * match indices_component_type {
+                ComponentType::UnsignedByte => { size_of::<u8>() },
+                ComponentType::UnsignedShort => { size_of::<u16>() },
+                ComponentType::UnsignedInt => { size_of::<u32>() }
+                _ => Err(GltfError::from("incompatible component type"))?
+              };
+              let indices_buffer_view = &buffer_views[match indices_accessor.buffer_view {
+                Some(v) => v,
+                None => Err(GltfError::from("Accessors for mesh indices must have a defined buffer view!"))?
+              }];
+              let indices_buffer_byte_offset = indices_buffer_view.byte_offset.unwrap_or(0) + indices_accessor_byte_offset;
+              let indices_buffer = &bin[indices_buffer_view.buffer]
+                [indices_buffer_byte_offset..indices_buffer_byte_offset+indices_buffer_byte_length];
 
-            indices.extend(&prim_indices);
-            // Insert the indices in reverse order if the material is double-sided (triggers a redraw of the backface as a 
-            // frontface, using a reverse iterator and offsets from rbegin (which is the end in the direction of begin)
-            // if let Some(materials) = base.materials {
-            //   if 
-            // }
-            // if base.materials.as_ref().unwrap()[prim.material.unwrap()].double_sided {
-            //   let reversed_indices = prim_indices.iter().rev();
-            //   indices.extend(reversed_indices);
-            // }
-          }
-          else {
-            indices = (0..positions.len() as u32).collect();
-          }
-          
-          index_offset = indices.len() as u32;
+              let prim_indices: Vec<u32> = match indices_component_type {
+                ComponentType::UnsignedByte => {
+                  indices_buffer.iter().map(|&byte| (byte as u32) + v_offset).collect()
+                },
+                ComponentType::UnsignedShort => {
+                  indices_buffer.chunks_exact(size_of::<u16>()).map(|chunk| 
+                    (u16::from_le_bytes(chunk.try_into().unwrap()) as u32) + v_offset).collect()
+                },
+                ComponentType::UnsignedInt => {
+                  indices_buffer.chunks_exact(size_of::<u32>()).map(|chunk| 
+                    u32::from_le_bytes(chunk.try_into().unwrap()) + v_offset).collect()
+                },
+                _ => { Err(GltfError::from("incompatible indices component type!"))? }
+              };        
 
-          let mat_idx = prim.material.unwrap_or(0);
-
-          let uv_accessor: anyhow::Result<&Accessor> = match prim.attributes.get(&String::from("TEXCOORD_0")) {
-            Some(uv_accessor_idx) => match accessors.get(*uv_accessor_idx) { 
-              Some(v) => Ok(v), None => Err(GltfError::from("No texture coordinates data found!").into())
-            },
-            None => Err(GltfError::from("Invalid texture coordinates accessor!").into())
-          };
-          let uv_buffer_view: anyhow::Result<&BufferView> = match &uv_accessor {
-            Ok(accessor) => match accessor.buffer_view { 
-              Some(v) => match buffer_views.get(v) { Some(v) => Ok(v), None => Err(GltfError::from("No buffer view found for texture coordinates!").into())}, 
-              None => Err(GltfError::from("Accessor for vertex texture coordinates must have a defined buffer view!").into())
-            },
-            Err(e) => Err(GltfError::from(e.to_string()).into())
-          };
-
-          let uv_buffer: anyhow::Result<&Vec<u8>> = match &uv_buffer_view {
-            Ok(buffer_view) => Ok(&bin[buffer_view.buffer]),
-            Err(e) => Err(GltfError::from(e.to_string()).into())
-          };
-          let uvs: Vec<glm::Vec2> = match uv_buffer {
-            Ok(buffer) => Self::parse_accessor(uv_accessor.unwrap(), uv_buffer_view.unwrap(), &buffer)?.chunks_exact(2)
-              .map(|chunk| glm::make_vec2(&chunk)).collect(),
-            Err(e) => {
-              println!("{}", e.to_string());
-              vec![glm::vec2(0.0, 0.0); positions.len()]
+              indices.extend(&prim_indices);
+              // Insert the indices in reverse order if the material is double-sided (triggers a redraw of the backface as a 
+              // frontface, using a reverse iterator and offsets from rbegin (which is the end in the direction of begin)
+              match material {
+                Some(mat) => if mat.double_sided {
+                  let reversed_indices = prim_indices.iter().rev();
+                  indices.extend(reversed_indices);
+                },
+                _ => ()
+              }
             }
-          };
-
-          let norms_accessor: anyhow::Result<&Accessor> = match prim.attributes.get(&String::from("NORMAL")) {
-            Some(norms_accessor_idx) => match accessors.get(*norms_accessor_idx) { 
-              Some(v) => Ok(v), None => Err(GltfError::from("No normals data found!").into())
-            },
-            None => Err(GltfError::from("Invalid normals accessor!").into())
-          };
-          let norms_buffer_view: anyhow::Result<&BufferView> = match &norms_accessor {
-            Ok(accessor) => match accessor.buffer_view { 
-              Some(v) => match buffer_views.get(v) { Some(v) => Ok(v), None => Err(GltfError::from("No buffer view found for normals!").into())}, 
-              None => Err(GltfError::from("Accessor for vertex normals must have a defined buffer view!").into())
-            },
-            Err(e) => Err(GltfError::from(e.to_string()).into())
-          };
-
-          let norms_buffer: anyhow::Result<&Vec<u8>> = match &norms_buffer_view {
-            Ok(buffer_view) => Ok(&bin[buffer_view.buffer]),
-            Err(e) => Err(GltfError::from(e.to_string()).into())
-          };
-          let norms: Vec<glm::Vec3> = match norms_buffer {
-            Ok(buffer) => Self::parse_accessor(norms_accessor.unwrap(), norms_buffer_view.unwrap(), &buffer)?.chunks_exact(3)
-              .map(|chunk| glm::make_vec3(&chunk)).collect(),
-            Err(e) => {
-              println!("{}", e.to_string());
-              vec![glm::vec3(0.0, 1.0, 0.0); positions.len()]
+            else {
+              indices = (0..positions.len() as u32).collect();
             }
-          };
+            
+            index_offset = start_offset + u32::try_from(indices.len())?;
 
-          let default_colour = glm::make_vec3(&[1.0, 1.0, 1.0]);
-          let colour: Option<glm::Vec3> = match prim.material {
-            Some(mat_idx) => match &base.materials.as_ref() {
-              Some(materials) => match &materials[mat_idx].pbr_metallic_roughness {
-                Some(pbr) => Some(glm::make_vec3(&pbr.base_color_factor[0..3])), None => None
+            let mat_idx = prim.material.unwrap_or(0);
+
+            let uv_accessor: anyhow::Result<&Accessor> = match prim.attributes.get(&String::from("TEXCOORD_0")) {
+              Some(uv_accessor_idx) => match accessors.get(*uv_accessor_idx) { 
+                Some(v) => Ok(v), None => Err(GltfError::from("No texture coordinates data found!").into())
+              },
+              None => Err(GltfError::from("Invalid texture coordinates accessor!").into())
+            };
+            let uv_buffer_view: anyhow::Result<&BufferView> = match &uv_accessor {
+              Ok(accessor) => match accessor.buffer_view { 
+                Some(v) => match buffer_views.get(v) { Some(v) => Ok(v), None => Err(GltfError::from("No buffer view found for texture coordinates!").into())}, 
+                None => Err(GltfError::from("Accessor for vertex texture coordinates must have a defined buffer view!").into())
+              },
+              Err(e) => Err(GltfError::from(e.to_string()).into())
+            };
+
+            let uv_buffer: anyhow::Result<&Vec<u8>> = match &uv_buffer_view {
+              Ok(buffer_view) => Ok(&bin[buffer_view.buffer]),
+              Err(e) => Err(GltfError::from(e.to_string()).into())
+            };
+            let uvs: Vec<glm::Vec2> = match uv_buffer {
+              Ok(buffer) => Self::parse_accessor(uv_accessor.unwrap(), uv_buffer_view.unwrap(), &buffer)?.chunks_exact(2)
+                .map(|chunk| glm::make_vec2(&chunk)).collect(),
+              Err(e) => {
+                println!("{}", e.to_string());
+                vec![glm::vec2(0.0, 0.0); positions.len()]
+              }
+            };
+
+            let norms_accessor: anyhow::Result<&Accessor> = match prim.attributes.get(&String::from("NORMAL")) {
+              Some(norms_accessor_idx) => match accessors.get(*norms_accessor_idx) { 
+                Some(v) => Ok(v), None => Err(GltfError::from("No normals data found!").into())
+              },
+              None => Err(GltfError::from("Invalid normals accessor!").into())
+            };
+            let norms_buffer_view: anyhow::Result<&BufferView> = match &norms_accessor {
+              Ok(accessor) => match accessor.buffer_view { 
+                Some(v) => match buffer_views.get(v) { Some(v) => Ok(v), None => Err(GltfError::from("No buffer view found for normals!").into())}, 
+                None => Err(GltfError::from("Accessor for vertex normals must have a defined buffer view!").into())
+              },
+              Err(e) => Err(GltfError::from(e.to_string()).into())
+            };
+
+            let norms_buffer: anyhow::Result<&Vec<u8>> = match &norms_buffer_view {
+              Ok(buffer_view) => Ok(&bin[buffer_view.buffer]),
+              Err(e) => Err(GltfError::from(e.to_string()).into())
+            };
+            let norms: Vec<glm::Vec3> = match norms_buffer {
+              Ok(buffer) => Self::parse_accessor(norms_accessor.unwrap(), norms_buffer_view.unwrap(), &buffer)?.chunks_exact(3)
+                .map(|chunk| glm::make_vec3(&chunk)).collect(),
+              Err(e) => {
+                println!("{}", e.to_string());
+                vec![glm::vec3(0.0, 1.0, 0.0); positions.len()]
+              }
+            };
+
+            let default_colour = glm::make_vec3(&[1.0, 1.0, 1.0]);
+            let colour: Option<glm::Vec3> = match prim.material {
+              Some(mat_idx) => match &base.materials.as_ref() {
+                Some(materials) => match &materials[mat_idx].pbr_metallic_roughness {
+                  Some(pbr) => Some(glm::make_vec3(&pbr.base_color_factor[0..3])), None => None
+                },
+                None => None
               },
               None => None
-            },
-            None => None
-          };
-            
+            };
+              
 
-          // Get the model's scale
-          // let translation: glm::Vec3 = glm::make_vec3(&node.translation.unwrap_or([0.0;3]));
-          // let rotation = node.rotation.unwrap_or([0.0, 0.0, 0.0, 1.0]);
-          // let scale: glm::Vec3 = glm::make_vec3(&node.scale.unwrap_or([1.0;3]));
+            // Get the model's scale
+            let translation: glm::Vec3 = glm::make_vec3(&node.translation);
+            let rotation = node.rotation;
+            let scale: glm::Vec3 = glm::make_vec3(&node.scale);
 
-          // let translate_mat = glm::translate(&glm::Mat4::identity(), &translation);
-          // let rotate_mat = glm::quat_to_mat4(&glm::make_quat(&rotation));
-          // let scale_mat = glm::scale(&glm::Mat4::identity(), &scale);
+            let translate_mat = glm::translate(&glm::Mat4::identity(), &translation);
+            let rotate_mat = glm::quat_to_mat4(&glm::make_quat(&rotation));
+            let scale_mat = glm::scale(&glm::Mat4::identity(), &scale);
 
-          // let transform_mat = translate_mat * rotate_mat * scale_mat;
-          let transform_mat = glm::Mat4::identity();
+            let transform_mat = translate_mat * rotate_mat * scale_mat;
 
-          // Instantiate new default vertices
-          vertices.reserve(positions.len());
-          for i in 0..positions.len() {
-            let homogenous_pos = glm::vec4(positions[i].x, positions[i].y, positions[i].z, 1.0);
-            let transformed_pos = transform_mat * homogenous_pos;
-            vertices.push(Vertex {
-              pos: glm::vec3(transformed_pos.x, transformed_pos.y, transformed_pos.z),
-              tex_coord: uvs[i],
-              colour: default_colour,
-              norm: norms[i]
+            // Instantiate new default vertices
+            vertices.reserve(positions.len());
+            for i in 0..positions.len() {
+              let homogenous_pos = glm::vec4(positions[i].x, positions[i].y, positions[i].z, 1.0);
+              let transformed_pos = transform_mat * homogenous_pos;
+              vertices.push(Vertex {
+                pos: glm::vec3(transformed_pos.x, transformed_pos.y, transformed_pos.z),
+                tex_coord: uvs[i],
+                colour: match colour { Some(v) => v, None => default_colour },
+                norm: norms[i]
+              });
+            }
+
+            submeshes.push( SubMesh {
+              index_offset: start_offset,
+              index_count: index_offset - start_offset,
+              material_id: u32::try_from(mat_idx)?,
+              first_vertex: initial_v_offset,
+              max_vertex: initial_v_offset + u32::try_from(vertices.len())?,
+              alpha_cut: match material {
+                Some(mat) => if mat.alpha_mode == MaterialAlphaMode::Opaque { vk::FALSE } else { vk::TRUE },
+                None => vk::FALSE
+              },
             });
-          }
 
-          submeshes.push( SubMesh {
-            index_offset: start_offset,
-            index_count: index_offset - start_offset,
-            material_id: mat_idx as u32,
-            first_vertex: 0,
-            max_vertex: vertices.len() as u32,
-            alpha_cut: 0,
+            Ok(())
           });
-
-          Ok(())
-        });
+        }
         Ok(())
       });
-    };
+    }
     Ok((vertices, indices, submeshes))
   }
 }

@@ -3,15 +3,15 @@ use std::{fs, path::{self, Path, PathBuf}, str::FromStr};
 use crate::gltf_loader::{GltfDocument};
 
 #[cfg(target_os = "linux")]
-const PATHS: &[&str] = &[
+pub const PATHS: &[&str] = &[
 "ABeautifulGame/glTF/ABeautifulGame.gltf",
 "AlphaBlendModeTest/glTF/AlphaBlendModeTest.gltf",
-// "AnimatedColorsCube/glTF/AnimatedColorsCube.gltf", // KHR_animation_pointer
+"AnimatedColorsCube/glTF/AnimatedColorsCube.gltf", // KHR_animation_pointer
 "AnimatedCube/glTF/AnimatedCube.gltf",
 "AnimatedMorphCube/glTF/AnimatedMorphCube.gltf",
 "AnimatedMorphCube/glTF-Quantized/AnimatedMorphCube.gltf",
 "AnimatedTriangle/glTF/AnimatedTriangle.gltf",
-// "AnimationPointerUVs/glTF/AnimationPointerUVs.gltf", // KHR_animation_pointer
+"AnimationPointerUVs/glTF/AnimationPointerUVs.gltf", // KHR_animation_pointer
 "AnisotropyBarnLamp/glTF/AnisotropyBarnLamp.gltf",
 "AnisotropyBarnLamp/glTF-KTX-BasisU/AnisotropyBarnLamp.gltf",
 "AnisotropyDiscTest/glTF/AnisotropyDiscTest.gltf",
@@ -86,7 +86,7 @@ const PATHS: &[&str] = &[
 "Corset/glTF/Corset.gltf",
 "Corset/glTF-Draco/Corset.gltf",
 "Cube/glTF/Cube.gltf",
-// "CubeVisibility/glTF/CubeVisibility.gltf", // KHR_animation_pointer
+"CubeVisibility/glTF/CubeVisibility.gltf", // KHR_animation_pointer
 "DamagedHelmet/glTF/DamagedHelmet.gltf",
 "DamagedHelmet/glTF-Embedded/DamagedHelmet.gltf",
 "DiffuseTransmissionPlant/glTF/DiffuseTransmissionPlant.gltf",
@@ -122,7 +122,7 @@ const PATHS: &[&str] = &[
 "Lantern/glTF-Draco/Lantern.gltf",
 "Lantern/glTF-Quantized/Lantern.gltf",
 "LightsPunctualLamp/glTF/LightsPunctualLamp.gltf",
-// "LightVisibility/glTF/LightVisibility.gltf", // KHR_animation_pointer
+"LightVisibility/glTF/LightVisibility.gltf", // KHR_animation_pointer
 "MandarinOrange/glTF/MandarinOrange.gltf",
 "MaterialsVariantsShoe/glTF/MaterialsVariantsShoe.gltf",
 "MeshPrimitiveModes/glTF/MeshPrimitiveModes.gltf",
@@ -147,7 +147,7 @@ const PATHS: &[&str] = &[
 "PlaysetLightTest/glTF/PlaysetLightTest.gltf",
 "PointLightIntensityTest/glTF/PointLightIntensityTest.gltf",
 "PotOfCoals/glTF/PotOfCoals.gltf",
-// "PotOfCoalsAnimationPointer/glTF/PotOfCoalsAnimationPointer.gltf", // KHR_animation_pointer
+"PotOfCoalsAnimationPointer/glTF/PotOfCoalsAnimationPointer.gltf", // KHR_animation_pointer
 "PrimitiveModeNormalsTest/glTF/PrimitiveModeNormalsTest.gltf",
 "RecursiveSkeletons/glTF/RecursiveSkeletons.gltf",
 "RiggedFigure/glTF/RiggedFigure.gltf",
@@ -161,7 +161,7 @@ const PATHS: &[&str] = &[
 "SheenChair/glTF/SheenChair.gltf",
 "SheenCloth/glTF/SheenCloth.gltf",
 "SheenTestGrid/glTF/SheenTestGrid.gltf",
-// "SheenWoodLeatherSofa/glTF/SheenWoodLeatherSofa.gltf", // EXT_texture_webp
+"SheenWoodLeatherSofa/glTF/SheenWoodLeatherSofa.gltf", // EXT_texture_webp
 "SimpleInstancing/glTF/SimpleInstancing.gltf",
 "SimpleMaterial/glTF/SimpleMaterial.gltf",
 "SimpleMaterial/glTF-Embedded/SimpleMaterial.gltf",
@@ -179,7 +179,7 @@ const PATHS: &[&str] = &[
 "Sponza/glTF/Sponza.gltf",
 "StainedGlassLamp/glTF/StainedGlassLamp.gltf",
 "StainedGlassLamp/glTF-JPG-PNG/StainedGlassLamp.gltf",
-// "StainedGlassLamp/glTF-KTX-BasisU/StainedGlassLamp.gltf", // KHR_texture_basisu
+"StainedGlassLamp/glTF-KTX-BasisU/StainedGlassLamp.gltf", // KHR_texture_basisu
 "SunglassesKhronos/glTF/SunglassesKhronos.gltf",
 "SunglassesKhronos/glTF-Draco/SunglassesKhronos.gltf",
 "Suzanne/glTF/Suzanne.gltf",
@@ -215,7 +215,7 @@ const PATHS: &[&str] = &[
 ];
 
 #[cfg(target_os = "windows")]
-const PATHS: &[&str] = &[
+pub const PATHS: &[&str] = &[
 "ABeautifulGame\\glTF\\ABeautifulGame.gltf",
 "AlphaBlendModeTest\\glTF\\AlphaBlendModeTest.gltf",
 "AnimatedColorsCube\\glTF\\AnimatedColorsCube.gltf",

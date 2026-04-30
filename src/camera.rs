@@ -20,6 +20,9 @@ pub struct Camera
   delta_fov: f32,
   pub fov_speed: f32,
 
+  pub near_plane: f32,
+  pub far_plane: f32,
+
   pub viewport_width: f32,
   pub viewport_height: f32,
 
@@ -46,6 +49,8 @@ impl Camera
         fov: 45.0,
         delta_fov: 0.0,
         fov_speed: 50.0,
+        near_plane: 0.03,
+        far_plane: 100.0,
         viewport_width: width as f32,
         viewport_height: height as f32,
         forward: glm::vec3(0.0, 0.0, 1.0),
@@ -64,7 +69,7 @@ impl Camera
   pub fn get_proj_matrix(&self) -> glm::Mat4
   {
     let mut proj: glm::Mat4 = glm::perspective(
-      self.viewport_width / self.viewport_height, self.fov.to_radians(), 0.01, 100.0);
+      self.viewport_width / self.viewport_height, self.fov.to_radians(), self.near_plane, self.far_plane);
     proj.m22 *= -1.0;
     return proj;
   }
