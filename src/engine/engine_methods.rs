@@ -15,7 +15,7 @@ use crate::engine::{
 };
 use crate::camera::Camera;
 use crate::gltf_loader::test::PATHS;
-use crate::gltf_loader::{Accessor, BufferView};
+use crate::gltf_loader::{Accessor, BufferView, Node, Scene};
 use crate::gltf_loader::enums::{AccessorType, ComponentType, MaterialAlphaMode};
 use crate::gltf_loader::{GltfDocument, error::GltfError};
 use crate::model::CUBE;
@@ -2606,6 +2606,13 @@ impl Engine
     let mut indices: Vec<u32> = vec![];
     let mut submeshes: Vec<SubMesh> = vec![];
 
+    if base.scene.is_none() { Err(GltfError::from("No default scene found!"))?}
+    let scene: &Scene = match base.scenes.as_ref() {
+      Some(scenes) => match scenes.get(base.scene.unwrap()) { Some(v) => v, None => Err(GltfError::from("`scene` did not contain a valid index!"))?},
+      None => Err(GltfError::from("No scene data found!"))?
+    };
+    let node_indices: &Vec<usize> = match scene.nodes.as_ref() { Some(nodes) => nodes, None => Err(GltfError::from("No nodes found in scene!"))? };
+
     let accessors = match base.accessors.as_ref() {
       Some(accessors) => accessors,
       None => Err(GltfError::from("Document needs accessors to get mesh data!"))?
@@ -2618,7 +2625,25 @@ impl Engine
       Some(meshes) => meshes,
       None => Err(GltfError::from("Document needs meshes to get mesh data!"))?
     };
-    if let Some(nodes) = &base.nodes {
+    let nodes = match base.nodes.as_ref() {
+      Some(nodes) => nodes,
+      None => Err(GltfError::from("Document needs nodes to get mesh data!"))?
+    };
+
+    // Check nodes and child nodes are valid
+    let _ = node_indices.iter().try_for_each(|&idx| -> anyhow::Result<()> {
+      match nodes.get(idx) { 
+        Some(node) => match node.children.as_ref() { 
+          Some(children) => children.iter().try_for_each(|&child_idx| match nodes.get(child_idx) { 
+            Some(_) => Ok(()), 
+            None => Err(GltfError::from("Invalid child node index!"))?
+          }), 
+          None => Ok(()) 
+        }, 
+        None => Err(GltfError::from("Invalid node index!"))?
+      }});
+    let nodes: Vec<&Node> = node_indices.iter().map(|&idx| nodes.get(idx).unwrap() ).collect();
+
       let _ = nodes.iter().try_for_each(|node| -> anyhow::Result<()> {
         if let Some(mesh_idx) = node.mesh {
           let mesh = match meshes.get(mesh_idx) { Some(v) => v, None => Err(GltfError::from("Mesh does not exist!"))?};
@@ -2698,8 +2723,6 @@ impl Engine
               indices = (0..positions.len() as u32).collect();
             }
             
-            index_offset = start_offset + u32::try_from(indices.len())?;
-
             let mat_idx = prim.material.unwrap_or(0);
 
             let uv_accessor: anyhow::Result<&Accessor> = match prim.attributes.get(&String::from("TEXCOORD_0")) {
@@ -2837,7 +2860,7 @@ impl Engine
 
             submeshes.push( SubMesh {
               index_offset: start_offset,
-              index_count: index_offset - start_offset,
+              index_count: u32::try_from(indices.len())? - start_offset,
               material_id: u32::try_from(mat_idx)?,
               first_vertex: initial_v_offset,
               max_vertex: initial_v_offset + u32::try_from(vertices.len())?,
@@ -2852,7 +2875,6 @@ impl Engine
         }
         Ok(())
       });
-    }
     Ok((vertices, indices, submeshes))
   }
 }

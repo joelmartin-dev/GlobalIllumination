@@ -37,7 +37,7 @@ float4 fragMain(VSOutput vertIn) : SV_TARGET {
     float4 textureColour = textures[pc.materialID].Sample(textureSampler, vertIn.fragTexCoord);
     // return textureColour * float4(vertIn.fragColor, 1.0f);
     //return float4(vertIn.fragColor, 1.0f);
-    return float4(vertIn.fragNormal.xyz, 1.0f);
+    return float4(vertIn.fragTangent);
 }
 
 [shader("compute")]
