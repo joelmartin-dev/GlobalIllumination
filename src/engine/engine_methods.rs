@@ -2,6 +2,7 @@ use std::ffi::{CStr, CString, c_void};
 use std::fs::{self, File};
 use std::io::{Write};
 use std::path::{Path, PathBuf};
+use std::ptr::null;
 use std::{u64, f32};
 
 use crate::app_options::AppOptions;
@@ -166,8 +167,7 @@ impl Engine
     let fallback_texture_data = {
       let command_buffer = Self::begin_single_time_commands(&context.device, context.command_pool);
       let (image, format, mip_levels) = Self::create_texture_image_from_png(
-        &context.instance, &context.device, 
-        context.physical_device, command_buffer, &Path::new(FALLBACK_TEXTURE_PATH)
+        &context, command_buffer, &Path::new(FALLBACK_TEXTURE_PATH)
       );
       Self::end_single_time_commands(&context.device, context.queue, command_buffer);
       let view = Self::create_image_view(&context.device, image.0, format, vk::ImageAspectFlags::COLOR, mip_levels);
@@ -185,13 +185,18 @@ impl Engine
       nrm_buffer: (vk::Buffer::null(), vk::DeviceMemory::null()), 
       tang_buffer: (vk::Buffer::null(), vk::DeviceMemory::null()) 
     };
+    let mut materials = ImageData {
+      images: vec![],
+      views: vec![],
+      sampler: fallback_texture_data.sampler
+    };
 
     PATHS[35..36].iter().for_each(|&path| {
       let prefix = std::env::var("GLTF_PREFIX").unwrap();
       let prefix_path = PathBuf::from(prefix);
       let p = PathBuf::from(path);
       let joined_p = prefix_path.join(p);
-      match Self::load_gltf(&context, &mut vertices, &mut indices, &mut submeshes, &vertex_data, &joined_p, true) {
+      match Self::load_gltf(&context, &mut vertices, &mut indices, &mut submeshes, &vertex_data, &mut materials, &fallback_texture_data, &joined_p, true) {
         Err(e) => println!("Received error: {}", e.to_string()),
         Ok(vd) => { vertex_data = vd; println!("Loaded: {:?}", path) }
       }
@@ -290,6 +295,7 @@ impl Engine
       submeshes,
       vertex_data,
       gltf_replace_mode: true,
+      materials,
       // indirect_commands: Default::default(),
       // indirect_commands_buffer: Default::default(),
       descriptor_pool,
@@ -937,10 +943,12 @@ impl Engine
 
   // Load PNG texture from path into textureImages[idx]
   fn create_texture_image_from_png(
-    instance: &Instance, device: &Device,
-    physical_device: vk::PhysicalDevice, command_buffer: vk::CommandBuffer, texture_path: &Path
+    context: &EngineContext, command_buffer: vk::CommandBuffer, texture_path: &Path
   ) -> ((vk::Image, vk::DeviceMemory), vk::Format, u32)
   {
+    let instance = &context.instance;
+    let device = &context.device;
+    let physical_device = context.physical_device;
     let texture = ImageReader::open(texture_path).unwrap().decode().unwrap();
 
     let width = texture.width(); let height = texture.height();
@@ -2557,7 +2565,7 @@ impl Engine
     Ok(result)
   }
 
-  pub fn load_gltf(context: &EngineContext, vertices: &mut Vec<Vertex>, indices: &mut Vec<u32>, submeshes: &mut Vec<SubMesh>, vertex_data: &VertexData, path: &PathBuf, gltf_replace_mode: bool) -> anyhow::Result<VertexData>
+  pub fn load_gltf(context: &EngineContext, vertices: &mut Vec<Vertex>, indices: &mut Vec<u32>, submeshes: &mut Vec<SubMesh>, vertex_data: &VertexData, materials: &mut ImageData, fallback_texture_data: &ImageData, path: &PathBuf, gltf_replace_mode: bool) -> anyhow::Result<VertexData>
   {
     let (base, bin) = GltfDocument::load(path)?;
     let device = &context.device;
@@ -2569,6 +2577,50 @@ impl Engine
         &base, &bin, 0, 0)?;
   
       *vertices = loaded_vertices; *indices = loaded_indices; *submeshes = loaded_submeshes;
+      
+      materials.views.iter().for_each(|&view| unsafe { device.destroy_image_view(view, None);});
+      materials.views.clear();
+      materials.images.iter().for_each(|&(image, memory)| {
+        unsafe { device.destroy_image(image, None); }
+        unsafe { device.free_memory(memory, None); }
+      });
+      materials.images.clear();
+
+      if let Some(gltf_materials) = &base.materials.as_ref() {
+        let _ = gltf_materials.iter().for_each(|material| {
+          let has_valid_texture = match &material.pbr_metallic_roughness {
+            Some(pbr) => if let Some(tex_idx) = &pbr.base_color_texture {
+              if let Some(textures) = base.textures.as_ref() {
+                if let Some(tex) = textures.get(tex_idx.index) {
+                  if let Some(image_idx) = tex.source {
+                    if let Some(images) = base.images.as_ref() {
+                      if let Some(base_color_image) = images.get(image_idx) {
+                        if let Some(uri) = base_color_image.uri.as_ref() {
+                          let parent_path = path.parent().unwrap();
+                          let command_buffer = Self::begin_single_time_commands(&context.device, context.command_pool);
+                          let (image, format, mip_levels) = Self::create_texture_image_from_png(
+                            &context, command_buffer, &parent_path.join(uri)
+                          );
+                          Self::end_single_time_commands(&context.device, context.queue, command_buffer);
+                          let view = Self::create_image_view(&context.device, image.0, format, vk::ImageAspectFlags::COLOR, mip_levels);
+                          materials.images.push(image);
+                          materials.views.push(view);
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+              true
+            } else { false },
+            None => false
+          };
+          if !has_valid_texture {
+            materials.images.extend(&fallback_texture_data.images);
+            materials.views.extend(&fallback_texture_data.views);
+          }
+        });
+      };
     }
     else
     {

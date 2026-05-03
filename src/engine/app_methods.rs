@@ -97,7 +97,9 @@ impl ApplicationHandler for App {
           let mut vertices = engine.vertices.as_mut();
           let mut indices = engine.indices.as_mut();
           let mut submeshes = engine.submeshes.as_mut();
-          match Engine::load_gltf(&mut context, &mut vertices, &mut indices, &mut submeshes, &engine.vertex_data, &path, engine.gltf_replace_mode) {
+          let materials = &mut engine.materials;
+
+          match Engine::load_gltf(&mut context, &mut vertices, &mut indices, &mut submeshes, &engine.vertex_data, materials, &engine.fallback_texture_data, &path, engine.gltf_replace_mode) {
             Err(e) => println!("Received error: {}", e.to_string()),
             Ok(vd) => {engine.vertex_data = vd; println!("Loaded: {:?}", path);}
           };

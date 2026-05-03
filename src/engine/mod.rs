@@ -152,7 +152,7 @@ pub struct VertexData {
   tang_buffer: (vk::Buffer, vk::DeviceMemory)
 }
 
-#[derive(Default)]
+#[derive(Clone, Default)]
 pub struct ImageData {
   images: Vec<(vk::Image, vk::DeviceMemory)>,
   views: Vec<vk::ImageView>,
@@ -197,6 +197,8 @@ pub struct Engine {
   
   vertex_data: VertexData,  
   gltf_replace_mode: bool,
+
+  materials: ImageData,
   
   // create_indirect_commands
   // indirect_commands: Vec<vk::DrawIndexedIndirectCommand>,
