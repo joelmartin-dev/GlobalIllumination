@@ -73,7 +73,7 @@ impl ApplicationHandler for App {
         },
         WindowEvent::RedrawRequested => {
           // println!("Redraw");
-          let delta_exp = 19;
+          let delta_exp = 18;
           let frame_start = Instant::now();
           engine.camera.update((engine.delta as f32) / ((2 << delta_exp) as f32));
           engine.draw_frame(window);
@@ -82,13 +82,13 @@ impl ApplicationHandler for App {
           // Lock to 60fps
           while frame_end.duration_since(frame_start).as_micros() < 16667 { frame_end = Instant::now() }
   
+          self.window.as_ref().unwrap().request_redraw();
+
           engine.delta = frame_end.duration_since(frame_start).as_micros();
           engine.runtime += engine.delta;
 
           let debug_ui_context = engine.debug_gui_context.as_mut().unwrap();
           debug_ui_context.delta = frame_end.duration_since(frame_start).as_micros();
-
-          self.window.as_ref().unwrap().request_redraw();
         },
         WindowEvent::DroppedFile(path) => {
           let engine = self.engine.as_mut().unwrap();
