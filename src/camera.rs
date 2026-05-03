@@ -50,7 +50,7 @@ impl Camera
         delta_fov: 0.0,
         fov_speed: 50.0,
         near_plane: 0.03,
-        far_plane: 100.0,
+        far_plane: 1000.0,
         viewport_width: width as f32,
         viewport_height: height as f32,
         forward: glm::vec3(0.0, 0.0, 1.0),

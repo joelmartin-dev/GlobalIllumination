@@ -2623,9 +2623,8 @@ impl Engine
     if let Some(mesh_idx) = node.mesh {
       let mesh = match meshes.get(mesh_idx) { Some(v) => v, None => Err(GltfError::from("Mesh does not exist!"))?};
       let _ = mesh.primitives.iter().try_for_each(|prim| -> anyhow::Result<()> {
-        let index_offset: u32 = initial_index_offset + u32::try_from(indices.len())?;
-
-        let start_offset: u32 = index_offset;
+        let initial_indices_count: u32 = u32::try_from(indices.len())?;
+        let start_offset: u32 = initial_index_offset + u32::try_from(indices.len())?;
         // v_offset will help in evaluating the absolute value of this primitives indices so they match up with the
         // correct vertices in the vertex buffer
         let v_offset: u32 = initial_v_offset + u32::try_from(vertices.len())?;
@@ -2695,7 +2694,7 @@ impl Engine
           }
         }
         else {
-          indices = (0..positions.len() as u32).collect();
+          indices.extend((0..positions.len() as u32).collect::<Vec<u32>>());
         }
         
         let mat_idx = prim.material.unwrap_or(0);
@@ -2824,7 +2823,7 @@ impl Engine
 
         submeshes.push( SubMesh {
           index_offset: start_offset,
-          index_count: u32::try_from(indices.len())? - start_offset,
+          index_count: u32::try_from(indices.len())? - initial_indices_count,
           material_id: u32::try_from(mat_idx)?,
           first_vertex: initial_v_offset,
           max_vertex: initial_v_offset + u32::try_from(vertices.len())?,
@@ -2932,11 +2931,6 @@ impl Engine
       submeshes.extend(loaded_submeshes);
       Ok(())
     })?;
-
-      let _ = nodes.iter().try_for_each(|node| -> anyhow::Result<()> {
-        
-        Ok(())
-      });
     Ok((vertices, indices, submeshes))
   }
 }

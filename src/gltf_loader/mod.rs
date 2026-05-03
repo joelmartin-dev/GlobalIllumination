@@ -115,17 +115,17 @@ impl Validatable for GltfDocument {
   fn is_valid(&self, _base: &GltfDocument) -> anyhow::Result<()> {
     if let Some(ext_used)     = &self.extensions_used     { check_if_empty(ext_used,      "extensionsUsed"    )? ; 
                                                             check_for_dup_items(ext_used, "extensionsUsed"    )? ;
-                                                            match ["KHR_materials_anisotropy"].iter().any(|ext| ext_used.iter().any(|used_ext| ext == used_ext)) {
-                                                              true => (),
-                                                              false => Err(GltfError::from(format!("Unsupported extensions found: {:?}", ext_used)))? 
-                                                            }
+                                                            // match ["KHR_materials_anisotropy"].iter().any(|ext| ext_used.iter().any(|used_ext| ext == used_ext)) {
+                                                            //   true => (),
+                                                            //   false => Err(GltfError::from(format!("Unsupported extensions found: {:?}", ext_used)))? 
+                                                            // }
                                                             }
     if let Some(ext_req)      = &self.extensions_required { check_if_empty(ext_req,       "extensionsRequired")? ; 
                                                             check_for_dup_items(ext_req,  "extensionsRequired")? ;
-                                                            match ["KHR_materials_anisotropy"].iter().any(|ext| ext_req.iter().any(|req_ext| ext == req_ext)) {
-                                                              true => (),
-                                                              false => Err(GltfError::from(format!("Unsupported extensions found: {:?}", ext_req)))?  
-                                                            }
+                                                            // match ["KHR_materials_anisotropy"].iter().any(|ext| ext_req.iter().any(|req_ext| ext == req_ext)) {
+                                                            //   true => (),
+                                                            //   false => Err(GltfError::from(format!("Unsupported extensions found: {:?}", ext_req)))?  
+                                                            // }
                                                             }
     if let Some(accessors)    = &self.accessors           { check_if_empty(accessors,     "accessors"         )? }
     if let Some(animations)   = &self.animations          { check_if_empty(animations,    "animations"        )? }
