@@ -20,7 +20,7 @@ VSOutput vertMain(VSInput input) {
 //     output.pos = float4(input.inPosition, 1.0);
 //     output.fragColor = input.inColor;
 //     output.fragTexCoord = input.inTexCoord;
-//     output.fragNormal = input.inNormal;
+//     output.fragNormal d= input.inNormal;
 //     output.worldPos = input.inPosition;
 //     return output;
 // }

@@ -2650,47 +2650,56 @@ impl Engine
           };
         // Get the accessor for where the primitive stores its indices
         if let Some(indices_accessor_index) = prim.indices {
-          let indices_accessor = &accessors[indices_accessor_index];
-          let indices_accessor_byte_offset = indices_accessor.byte_offset.unwrap_or(0);
-          let indices_component_type = indices_accessor.component_type;
-          let indices_buffer_byte_length = indices_accessor.count * match indices_component_type {
+          let accessor: &Accessor = match accessors.get(indices_accessor_index) {
+            Some(v) => v, 
+            None => Err(GltfError::from("No indices data found!"))?
+          };
+          let accessor_byte_offset = accessor.byte_offset.unwrap_or(0);
+          let byte_length = accessor.count * match accessor.component_type {
             ComponentType::UnsignedByte => { size_of::<u8>() },
             ComponentType::UnsignedShort => { size_of::<u16>() },
             ComponentType::UnsignedInt => { size_of::<u32>() }
             _ => Err(GltfError::from("incompatible component type"))?
           };
-          let indices_buffer_view = &buffer_views[match indices_accessor.buffer_view {
+          let buffer_view: &BufferView = match accessor.buffer_view { 
+            Some(idx) => match buffer_views.get(idx) { 
+              Some(v) => v,
+              None => Err(GltfError::from("No buffer view found for indices!"))?
+            },
+            None => Err(GltfError::from("Accessor for indices has no buffer view defined!"))?
+          };
+          let byte_offset = buffer_view.byte_offset.unwrap_or(0) + accessor_byte_offset;
+          let buffer: &Vec<u8> = match &bin.get(buffer_view.buffer) { 
+            Some(v) => v, 
+            None => Err(GltfError::from("Buffer view contains invalid buffer index!"))? 
+          };
+          let buffer_data = match buffer.get(byte_offset..byte_offset+byte_length) {
             Some(v) => v,
-            None => Err(GltfError::from("Accessors for mesh indices must have a defined buffer view!"))?
-          }];
-          let indices_buffer_byte_offset = indices_buffer_view.byte_offset.unwrap_or(0) + indices_accessor_byte_offset;
-          let indices_buffer = &bin[indices_buffer_view.buffer]
-            [indices_buffer_byte_offset..indices_buffer_byte_offset+indices_buffer_byte_length];
+            None => Err(GltfError::from("Buffer did not contain required slice!"))?
+          };
 
-          let prim_indices: Vec<u32> = match indices_component_type {
+          let prim_indices: Vec<u32> = match accessor.component_type {
             ComponentType::UnsignedByte => {
-              indices_buffer.iter().map(|&byte| (byte as u32) + v_offset).collect()
+              buffer_data.iter().map(|&byte| (byte as u32) + v_offset).collect()
             },
             ComponentType::UnsignedShort => {
-              indices_buffer.chunks_exact(size_of::<u16>()).map(|chunk| 
+              buffer_data.chunks_exact(size_of::<u16>()).map(|chunk| 
                 (u16::from_le_bytes(chunk.try_into().unwrap()) as u32) + v_offset).collect()
             },
             ComponentType::UnsignedInt => {
-              indices_buffer.chunks_exact(size_of::<u32>()).map(|chunk| 
+              buffer_data.chunks_exact(size_of::<u32>()).map(|chunk| 
                 u32::from_le_bytes(chunk.try_into().unwrap()) + v_offset).collect()
             },
             _ => { Err(GltfError::from("incompatible indices component type!"))? }
-          };        
+          };
 
           indices.extend(&prim_indices);
           // Insert the indices in reverse order if the material is double-sided (triggers a redraw of the backface as a 
           // frontface, using a reverse iterator and offsets from rbegin (which is the end in the direction of begin)
-          match material {
-            Some(mat) => if mat.double_sided {
-              let reversed_indices = prim_indices.iter().rev();
-              indices.extend(reversed_indices);
-            },
-            _ => ()
+          if let Some(mat) = material {
+            if mat.double_sided {
+              indices.extend(prim_indices.iter().rev());
+            }
           }
         }
         else {
@@ -2699,111 +2708,111 @@ impl Engine
         
         let mat_idx = prim.material.unwrap_or(0);
 
-        let uv_accessor: anyhow::Result<&Accessor> = match prim.attributes.get(&String::from("TEXCOORD_0")) {
-          Some(uv_accessor_idx) => match accessors.get(*uv_accessor_idx) { 
-            Some(v) => Ok(v), None => Err(GltfError::from("No texture coordinates data found!").into())
-          },
-          None => Err(GltfError::from("Invalid texture coordinates accessor!").into())
+        // Load UVs
+        let accessor: Option<&Accessor> = match prim.attributes.get(&String::from("TEXCOORD_0")) {
+          Some(accessor_idx) => match accessors.get(*accessor_idx) { 
+            Some(v) => Some(v), None => Err(GltfError::from("No texture coordinates data found!"))?
+          }, None => None
         };
-        let uv_buffer_view: anyhow::Result<&BufferView> = match &uv_accessor {
-          Ok(accessor) => match accessor.buffer_view { 
-            Some(v) => match buffer_views.get(v) { Some(v) => Ok(v), None => Err(GltfError::from("No buffer view found for texture coordinates!").into())}, 
-            None => Err(GltfError::from("Accessor for vertex texture coordinates must have a defined buffer view!").into())
-          },
-          Err(e) => Err(GltfError::from(e.to_string()).into())
+        let buffer_view: Option<&BufferView> = match &accessor {
+          Some(accessor) => match accessor.buffer_view { 
+            Some(idx) => match buffer_views.get(idx) { Some(v) => Some(v), None => Err(GltfError::from("No buffer view found for texture coordinates!"))?}, 
+            None => Err(GltfError::from("Accessor for vertex texture coordinates must have a defined buffer view!"))?
+          }, None => None
         };
-
-        let uv_buffer: anyhow::Result<&Vec<u8>> = match &uv_buffer_view {
-          Ok(buffer_view) => Ok(&bin[buffer_view.buffer]),
-          Err(e) => Err(GltfError::from(e.to_string()).into())
+        let buffer: Option<&Vec<u8>> = match &buffer_view {
+          Some(buffer_view) => match &bin.get(buffer_view.buffer) { 
+            Some(v) => Some(v), 
+            None => Err(GltfError::from("Buffer view contains invalid buffer index!"))? 
+          }, None => None
         };
-        let uvs: Vec<glm::Vec2> = match uv_buffer {
-          Ok(buffer) => Self::parse_accessor(uv_accessor.unwrap(), uv_buffer_view.unwrap(), &buffer)?.chunks_exact(2)
+        let uvs: Vec<glm::Vec2> = match buffer {
+          Some(buffer) => Self::parse_accessor(accessor.unwrap(), buffer_view.unwrap(), &buffer)?.chunks_exact(2)
             .map(|chunk| glm::make_vec2(&chunk)).collect(),
-          Err(e) => {
-            println!("{}", e.to_string());
+          None => {
+            println!("Loading default texture coordinates...");
             vec![glm::vec2(0.0, 0.0); positions.len()]
           }
         };
 
-        let norms_accessor: anyhow::Result<&Accessor> = match prim.attributes.get(&String::from("NORMAL")) {
-          Some(norms_accessor_idx) => match accessors.get(*norms_accessor_idx) { 
-            Some(v) => Ok(v), None => Err(GltfError::from("No normals data found!").into())
-          },
-          None => Err(GltfError::from("Invalid normals accessor!").into())
+        // Load colours
+        let accessor: Option<&Accessor> = match prim.attributes.get(&String::from("COLOR_0")) {
+          Some(accessor_idx) => match accessors.get(*accessor_idx) { 
+            Some(v) => Some(v), None => Err(GltfError::from("No vertex colour data found!"))?
+          }, None => None
         };
-        let norms_buffer_view: anyhow::Result<&BufferView> = match &norms_accessor {
-          Ok(accessor) => match accessor.buffer_view { 
-            Some(v) => match buffer_views.get(v) { Some(v) => Ok(v), None => Err(GltfError::from("No buffer view found for normals!").into())}, 
-            None => Err(GltfError::from("Accessor for vertex normals must have a defined buffer view!").into())
-          },
-          Err(e) => Err(GltfError::from(e.to_string()).into())
+        let buffer_view: Option<&BufferView> = match &accessor {
+          Some(accessor) => match accessor.buffer_view { 
+            Some(idx) => match buffer_views.get(idx) { Some(v) => Some(v), None => Err(GltfError::from("No buffer view found for vertex colours!"))?}, 
+            None => Err(GltfError::from("Accessor for vertex colours must have a defined buffer view!"))?
+          }, None => None
+        };
+        let buffer: Option<&Vec<u8>> = match &buffer_view {
+          Some(buffer_view) => match &bin.get(buffer_view.buffer) { 
+            Some(v) => Some(v), 
+            None => Err(GltfError::from("Buffer view contains invalid buffer index!"))? 
+          }, None => None
+        };
+        let cols: Vec<glm::Vec3> = match buffer {
+          Some(buffer) => Self::parse_accessor(accessor.unwrap(), buffer_view.unwrap(), &buffer)?.chunks_exact(3)
+            .map(|chunk| glm::make_vec3(&chunk)).collect(),
+          None => {
+            println!("Loading default vertex colours...");
+            vec![glm::vec3(1.0, 1.0, 1.0); positions.len()]
+          }
         };
 
-        let norms_buffer: anyhow::Result<&Vec<u8>> = match &norms_buffer_view {
-          Ok(buffer_view) => Ok(&bin[buffer_view.buffer]),
-          Err(e) => Err(GltfError::from(e.to_string()).into())
+        // Load normals
+        let accessor: Option<&Accessor> = match prim.attributes.get(&String::from("NORMAL")) {
+          Some(accessor_idx) => match accessors.get(*accessor_idx) { 
+            Some(v) => Some(v), None => Err(GltfError::from("No normals data found!"))?
+          }, None => None
         };
-        let norms: Vec<glm::Vec3> = match norms_buffer {
-          Ok(buffer) => Self::parse_accessor(norms_accessor.unwrap(), norms_buffer_view.unwrap(), &buffer)?.chunks_exact(3)
+        let buffer_view: Option<&BufferView> = match &accessor {
+          Some(accessor) => match accessor.buffer_view { 
+            Some(idx) => match buffer_views.get(idx) { Some(v) => Some(v), None => Err(GltfError::from("No buffer view found for vertex normals!"))?}, 
+            None => Err(GltfError::from("Accessor for vertex normals must have a defined buffer view!"))?
+          }, None => None
+        };
+        let buffer: Option<&Vec<u8>> = match &buffer_view {
+          Some(buffer_view) => match &bin.get(buffer_view.buffer) { 
+            Some(v) => Some(v), 
+            None => Err(GltfError::from("Buffer view contains invalid buffer index!"))? 
+          }, None => None
+        };
+        let norms: Vec<glm::Vec3> = match buffer {
+          Some(buffer) => Self::parse_accessor(accessor.unwrap(), buffer_view.unwrap(), &buffer)?.chunks_exact(3)
             .map(|chunk| glm::make_vec3(&chunk)).collect(),
-          Err(e) => {
-            println!("{}", e.to_string());
+          None => {
+            println!("Loading default normals...");
             vec![glm::vec3(0.0, 1.0, 0.0); positions.len()]
           }
         };
 
-        let tangent_accessor: anyhow::Result<&Accessor> = match prim.attributes.get(&String::from("TANGENT")) {
-          Some(tangent_accessor_idx) => match accessors.get(*tangent_accessor_idx) { 
-            Some(v) => Ok(v), None => Err(GltfError::from("No tangents data found!").into())
-          },
-          None => Err(GltfError::from("Invalid tangents accessor!").into())
+        // Load tangents
+        let accessor: Option<&Accessor> = match prim.attributes.get(&String::from("TANGENT")) {
+          Some(accessor_idx) => match accessors.get(*accessor_idx) { 
+            Some(v) => Some(v), None => Err(GltfError::from("No tangent data found!"))?
+          }, None => None
         };
-        let tangent_buffer_view: anyhow::Result<&BufferView> = match &tangent_accessor {
-          Ok(accessor) => match accessor.buffer_view { 
-            Some(v) => match buffer_views.get(v) { Some(v) => Ok(v), None => Err(GltfError::from("No buffer view found for tangents!").into())}, 
-            None => Err(GltfError::from("Accessor for tangents must have a defined buffer view!").into())
-          },
-          Err(e) => Err(GltfError::from(e.to_string()).into())
+        let buffer_view: Option<&BufferView> = match &accessor {
+          Some(accessor) => match accessor.buffer_view { 
+            Some(idx) => match buffer_views.get(idx) { Some(v) => Some(v), None => Err(GltfError::from("No buffer view found for vertex tangents!"))?}, 
+            None => Err(GltfError::from("Accessor for vertex tangents must have a defined buffer view!"))?
+          }, None => None
         };
-
-        let tangent_buffer: anyhow::Result<&Vec<u8>> = match &tangent_buffer_view {
-          Ok(buffer_view) => Ok(&bin[buffer_view.buffer]),
-          Err(e) => Err(GltfError::from(e.to_string()).into())
+        let buffer: Option<&Vec<u8>> = match &buffer_view {
+          Some(buffer_view) => match &bin.get(buffer_view.buffer) { 
+            Some(v) => Some(v), 
+            None => Err(GltfError::from("Buffer view contains invalid buffer index!"))? 
+          }, None => None
         };
-        let tangents: Vec<glm::Vec4> = match tangent_buffer {
-          Ok(buffer) => Self::parse_accessor(tangent_accessor.unwrap(), tangent_buffer_view.unwrap(), &buffer)?.chunks_exact(4)
+        let tangents: Vec<glm::Vec4> = match buffer {
+          Some(buffer) => Self::parse_accessor(accessor.unwrap(), buffer_view.unwrap(), &buffer)?.chunks_exact(4)
             .map(|chunk| glm::make_vec4(&chunk)).collect(),
-          Err(e) => {
-            println!("{}", e.to_string());
+          None => {
+            println!("Loading default tangent...");
             vec![glm::vec4(0.0, 0.0, 0.0, 1.0); positions.len()]
-          }
-        };
-
-        let colours_accessor: anyhow::Result<&Accessor> = match prim.attributes.get(&String::from("COLOR_0")) {
-          Some(colours_accessor_idx) => match accessors.get(*colours_accessor_idx) { 
-            Some(v) => Ok(v), None => Err(GltfError::from("No vertex colours data found!").into())
-          },
-          None => Err(GltfError::from("Invalid colors accessor!").into())
-        };
-        let colours_buffer_view: anyhow::Result<&BufferView> = match &colours_accessor {
-          Ok(accessor) => match accessor.buffer_view { 
-            Some(v) => match buffer_views.get(v) { Some(v) => Ok(v), None => Err(GltfError::from("No buffer view found for vertex colours!").into())}, 
-            None => Err(GltfError::from("Accessor for vertex colours must have a defined buffer view!").into())
-          },
-          Err(e) => Err(GltfError::from(e.to_string()).into())
-        };
-
-        let colours_buffer: anyhow::Result<&Vec<u8>> = match &colours_buffer_view {
-          Ok(buffer_view) => Ok(&bin[buffer_view.buffer]),
-          Err(e) => Err(GltfError::from(e.to_string()).into())
-        };
-        let cols: Vec<glm::Vec3> = match colours_buffer {
-          Ok(buffer) => Self::parse_accessor(colours_accessor.unwrap(), colours_buffer_view.unwrap(), &buffer)?.chunks_exact(3)
-            .map(|chunk| glm::make_vec3(&chunk)).collect(),
-          Err(e) => {
-            println!("{}", e.to_string());
-            vec![glm::vec3(1.0, 1.0, 1.0); positions.len()]
           }
         };
 

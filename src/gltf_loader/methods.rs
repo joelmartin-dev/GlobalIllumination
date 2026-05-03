@@ -1,7 +1,8 @@
 use std::{any::{type_name}, fs, path::PathBuf};
 
-use pct_str::{PctString, UriReserved};
+use iri_string::{percent_encode::PercentEncoded, spec::IriSpec, types::{IriReferenceStr, IriReferenceString, IriStr}, validate::iri_reference};
 use serde::{Deserialize, Deserializer, Serializer, de::Error};
+use base64::{engine::general_purpose::STANDARD, Engine as _};
 
 use crate::gltf_loader::{GltfDocument, Validatable, enums::{MeshPrimitiveMode, Undefinable}, error::GltfError};
 
@@ -57,17 +58,43 @@ impl GltfDocument {
       let parent_path = match path.parent() { Some(v) => v, None => Err(GltfError::from("failed to get parent path!"))? };
       if let Some(buffers)      = &loaded.buffers
         {
-          buffers.iter().try_for_each(|buffer| 
+          let _ = buffers.iter().try_for_each(|buffer| -> anyhow::Result<()>
             { 
               if let Some(uri) = &buffer.uri {
-                match fs::read(parent_path.join(uri)) {
-                  Ok(bytes_vec) => loaded_buffers.push(bytes_vec.clone()),
-                  Err(e) => { return Err(e) }
+                const VALID_URI_MIME_TYPES: &[&str] = &[
+                  "application/octet-stream", "application/gltf-buffer"
+                ];
+                let encoded_iri = IriReferenceStr::new(uri)?;
+                if encoded_iri.scheme_str() != Some("data") { 
+                  let decoded_uri = iri_string::percent_encode::decode::decode_whatwg_bytes(uri.as_bytes());
+                  match fs::read(parent_path.join(decoded_uri.into_string()?)) {
+                    Ok(bytes_vec) => loaded_buffers.push(bytes_vec.clone()),
+                    Err(e) => Err(e)?
+                  }
+                }
+                let body = match encoded_iri.as_str().strip_prefix("data:") {
+                  Some(v) => v, None => Err(GltfError::from("Invalid embedded buffer!"))?
+                };
+                let mut segments = body.split(|c| c == ';' || c == ',');
+                
+                let mime_type = (match segments.next() {
+                  Some(v) => v, None => Err(GltfError::from("Failed to get mime type from uri!"))?
+                }).trim();
+                println!("{}", mime_type);
+                if !VALID_URI_MIME_TYPES.contains(&mime_type) { Err(GltfError::from("Uri contained invalid mime type!"))? };
+                let rest = segments.next();
+                if rest == Some("base64") {
+                  let data = match segments.last() {
+                    Some(enc_v) => match STANDARD.decode(enc_v) {
+                      Ok(v) => v, Err(e) => Err(e)?
+                    },
+                    None => Err(GltfError::from("No data found in uri!"))?
+                  };
+                  loaded_buffers.push(data);
                 }
               }
-              return Ok(());
-          }
-          )?;
+              Ok(())
+            });
         };
 
       Ok((loaded, loaded_buffers))
@@ -136,7 +163,10 @@ where D: Deserializer<'de>
 {
   let val = Option::<String>::deserialize(deserializer)?;
   match val {
-    Some(v) => { let encoded_val = PctString::encode(v.chars(), UriReserved::Path); Ok(Some(encoded_val.to_string()))},
+    Some(raw_uri) => match IriReferenceStr::new(&raw_uri) {
+      Ok(_) => Ok(Some(raw_uri)),
+      Err(_) => Ok(Some(PercentEncoded::<_, IriSpec>::from_path(raw_uri).to_string()))
+    },
     None => Ok(None)
   }
 }

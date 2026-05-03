@@ -5,7 +5,6 @@ pub mod error;
 
 use std::{collections::HashMap, fmt::{Debug, Display}};
 use anyhow;
-use iref::{iri};
 use regex::Regex;
 use serde::{Deserialize, Serialize};
 use serde_json::{Value, Map};
@@ -341,9 +340,9 @@ pub struct Buffer {
 }
 impl Validatable for Buffer {
   fn is_valid(&self, _base: &GltfDocument) -> anyhow::Result<()> {
-    
-    if let Some(uri) = &self.uri {
-      match iri::Path::new(&uri) { Err(e) => Err(GltfError::from(e.to_string()))?, _ => () } }
+    // if let Some(uri) = &self.uri.as_ref() {
+    //   match iri_reference::<IriSpec>(uri) { Ok(_) => (), Err(e) => Err(e)?};
+    // };
     check_items_for_min_val(&[self.byte_length], 1, "buffer.byteLength")?;
     Ok(())
   }
@@ -466,8 +465,9 @@ impl Validatable for Image {
     if let Some(buffer_view) = self.buffer_view {
       check_items_for_min_val(&[buffer_view], 0, "image.bufferView")?
     }
-    if let Some(uri) = &self.uri {
-      match iri::Path::new(uri.as_str()) { Err(e) => Err(GltfError::from(e.to_string()))?, _ => () } }
+    // if let Some(uri) = &self.uri.as_ref() {
+    //   match iri_reference::<IriSpec>(uri) { Ok(_) => (), Err(e) => Err(e)?};
+    // };
     Ok(())
   }
 }

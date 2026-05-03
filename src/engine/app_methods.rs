@@ -91,6 +91,7 @@ impl ApplicationHandler for App {
           debug_ui_context.delta = frame_end.duration_since(frame_start).as_micros();
         },
         WindowEvent::DroppedFile(path) => {
+          // println!("File dropped: {:?}", path);
           let engine = self.engine.as_mut().unwrap();
           let mut context = engine.context.as_mut().unwrap();
           let mut vertices = engine.vertices.as_mut();
@@ -101,8 +102,14 @@ impl ApplicationHandler for App {
             Ok(vd) => {engine.vertex_data = vd; println!("Loaded: {:?}", path);}
           };
           self.window.as_ref().unwrap().request_redraw();
+        },
+        WindowEvent::HoveredFile(path) => {
+          // println!("File hovered: {:?}", path);
+        },
+        WindowEvent::Focused(state) => {
+          // println!("Window is in {} mode!", match state { true => "focused", false => "unfocused" });
         }
-        _ => ()
+        _ => { }
       }
   }
   
