@@ -18,9 +18,10 @@ use crate::camera::Camera;
 use crate::gltf_loader::test::PATHS;
 use crate::gltf_loader::{Accessor, BufferView, Mesh, Node, Scene};
 use crate::gltf_loader::enums::{AccessorType, ComponentType, MaterialAlphaMode};
-use crate::gltf_loader::{GltfDocument, error::GltfError};
+use crate::gltf_loader::GltfDocument;
 use crate::model::CUBE;
 use crate::vertex::Vertex;
+use anyhow::anyhow;
 use ash::util::Align;
 use image::EncodableLayout;
 use ::image::ImageReader;
@@ -2484,7 +2485,7 @@ impl Engine
     };
   }
 
-  pub fn component_size(component_type: ComponentType) -> anyhow::Result<usize> 
+  pub fn component_size(component_type: ComponentType) -> Result<usize, String> 
   {
     match component_type {
       ComponentType::Byte => Ok(size_of::<i8>()),
@@ -2493,11 +2494,11 @@ impl Engine
       ComponentType::UnsignedShort => Ok(size_of::<u16>()),
       ComponentType::UnsignedInt => Ok(size_of::<u32>()),
       ComponentType::Float => Ok(size_of::<f32>()),
-      _ => Err(GltfError::from("Unsupported component type!"))?
+      _ => Err("Unsupported component type!")?
     }
   }
 
-  fn num_components(accessor_type: AccessorType) -> anyhow::Result<usize>
+  fn num_components(accessor_type: AccessorType) -> Result<usize, String>
   {
     match accessor_type {
       AccessorType::Scalar => Ok(1),
@@ -2507,7 +2508,7 @@ impl Engine
       AccessorType::Mat2 => Ok(4),
       AccessorType::Mat3 => Ok(9),
       AccessorType::Mat4 => Ok(16),
-      _ => Err(GltfError::from("Unsupported accessor type!"))?
+      _ => Err("Unsupported accessor type!")?
     }
   }
 
@@ -2533,11 +2534,11 @@ impl Engine
       ComponentType::Float => {
         Ok(f32::from_le_bytes(bytes.try_into()?))
       },
-      _ => Err(GltfError::from(format!("unsupported component type: {:?}!", component_type)))?
+      _ => Err(anyhow!("unsupported component type: {:?}!", component_type))?
     }
   }
 
-  fn parse_accessor(accessor: &Accessor, buffer_view: &BufferView, buffer: &[u8]) -> anyhow::Result<Vec<f32>>
+  fn parse_accessor(accessor: &Accessor, buffer_view: &BufferView, buffer: &[u8]) -> Result<Vec<f32>, String>
   {
     let accessor_type = accessor.ty;
     let component_type = accessor.component_type;
@@ -2557,7 +2558,7 @@ impl Engine
       for j in 0..num_comps {
         let offset = base_offset + j * comp_size;
         let bytes = &buffer[offset..offset + comp_size];
-        let value = Self::dequantize_value(bytes, component_type, normalized)?;
+        let value = Self::dequantize_value(bytes, component_type, normalized).map_err(|e| e.to_string())?;
         result.push(value);
       }
     }
@@ -2565,12 +2566,12 @@ impl Engine
     Ok(result)
   }
 
-  pub fn load_gltf(context: &EngineContext, vertices: &mut Vec<Vertex>, indices: &mut Vec<u32>, submeshes: &mut Vec<SubMesh>, vertex_data: &VertexData, materials: &mut ImageData, fallback_texture_data: &ImageData, path: &PathBuf, gltf_replace_mode: bool) -> anyhow::Result<VertexData>
+  pub fn load_gltf(context: &EngineContext, vertices: &mut Vec<Vertex>, indices: &mut Vec<u32>, submeshes: &mut Vec<SubMesh>, vertex_data: &VertexData, materials: &mut ImageData, fallback_texture_data: &ImageData, path: &PathBuf, gltf_replace_mode: bool) -> Result<VertexData, String>
   {
     let (base, bin) = GltfDocument::load(path)?;
     let device = &context.device;
     let queue = context.queue;
-    unsafe { device.queue_wait_idle(queue)? };
+    unsafe { device.queue_wait_idle(queue).map_err(|e| e.to_string())? };
 
     if gltf_replace_mode {
       let (loaded_vertices, loaded_indices, loaded_submeshes) = Self::load_geometry(
@@ -2625,7 +2626,7 @@ impl Engine
     else
     {
       let (loaded_vertices, loaded_indices, loaded_submeshes) = Self::load_geometry(
-        &base, &bin, u32::try_from(vertices.len())?, u32::try_from(indices.len())?)?;
+        &base, &bin, u32::try_from(vertices.len()).map_err(|e| e.to_string())?, u32::try_from(indices.len()).map_err(|e| e.to_string())?)?;
   
       vertices.extend(loaded_vertices); indices.extend(loaded_indices); submeshes.extend(loaded_submeshes);
     }
@@ -2653,7 +2654,7 @@ impl Engine
   }
 
   fn load_node(node: &Node, nodes: &Vec<Node>, accessors: &Vec<Accessor>, buffer_views: &Vec<BufferView>, meshes: &Vec<Mesh>, base: &GltfDocument, bin: &Vec<Vec<u8>>, initial_v_offset: u32, initial_index_offset: u32, matrix: &glm::Mat4) 
-    -> anyhow::Result<(Vec<Vertex>, Vec<u32>, Vec<SubMesh>)>
+    -> Result<(Vec<Vertex>, Vec<u32>, Vec<SubMesh>), String>
   {
     let mut vertices: Vec<Vertex> = Vec::new();
     let mut indices: Vec<u32> = Vec::new();
@@ -2673,22 +2674,22 @@ impl Engine
       { matrix * transform_mat } else { matrix * glm::make_mat4(&node.matrix) };
 
     if let Some(mesh_idx) = node.mesh {
-      let mesh = match meshes.get(mesh_idx) { Some(v) => v, None => Err(GltfError::from("Mesh does not exist!"))?};
-      let _ = mesh.primitives.iter().try_for_each(|prim| -> anyhow::Result<()> {
-        let initial_indices_count: u32 = u32::try_from(indices.len())?;
-        let start_offset: u32 = initial_index_offset + u32::try_from(indices.len())?;
+      let mesh = match meshes.get(mesh_idx) { Some(v) => v, None => Err("Mesh does not exist!")?};
+      let _ = mesh.primitives.iter().try_for_each(|prim| -> Result<(), String> {
+        let initial_indices_count: u32 = u32::try_from(indices.len()).map_err(|e| e.to_string())?;
+        let start_offset: u32 = initial_index_offset + u32::try_from(indices.len()).map_err(|e| e.to_string())?;
         // v_offset will help in evaluating the absolute value of this primitives indices so they match up with the
         // correct vertices in the vertex buffer
-        let v_offset: u32 = initial_v_offset + u32::try_from(vertices.len())?;
+        let v_offset: u32 = initial_v_offset + u32::try_from(vertices.len()).map_err(|e| e.to_string())?;
         let pos_accessor = match prim.attributes.get(&String::from("POSITION")) {
           Some(pos_accessor_idx) => match accessors.get(*pos_accessor_idx) { 
-            Some(v) => v, None => Err(GltfError::from("No positions data found!"))?
+            Some(v) => v, None => Err("No positions data found!")?
           },
-          None => Err(GltfError::from("Primitives must have at least positions defined!"))?
+          None => Err("Primitives must have at least positions defined!")?
         };
         let pos_buffer_view = match pos_accessor.buffer_view { 
-          Some(v) => match buffer_views.get(v) { Some(v) => v, None => Err(GltfError::from("No buffer view found for positions!"))?}, 
-          None => Err(GltfError::from("Accessor for vertex positions must have a defined buffer view!"))?
+          Some(v) => match buffer_views.get(v) { Some(v) => v, None => Err("No buffer view found for positions!")?}, 
+          None => Err("Accessor for vertex positions must have a defined buffer view!")?
         };
         let pos_buffer = &bin[pos_buffer_view.buffer];
         let positions: Vec<glm::Vec3> = Self::parse_accessor(&pos_accessor, &pos_buffer_view, &pos_buffer)?.chunks_exact(3)
@@ -2704,30 +2705,30 @@ impl Engine
         if let Some(indices_accessor_index) = prim.indices {
           let accessor: &Accessor = match accessors.get(indices_accessor_index) {
             Some(v) => v, 
-            None => Err(GltfError::from("No indices data found!"))?
+            None => Err("No indices data found!")?
           };
           let accessor_byte_offset = accessor.byte_offset.unwrap_or(0);
           let byte_length = accessor.count * match accessor.component_type {
             ComponentType::UnsignedByte => { size_of::<u8>() },
             ComponentType::UnsignedShort => { size_of::<u16>() },
             ComponentType::UnsignedInt => { size_of::<u32>() }
-            _ => Err(GltfError::from("incompatible component type"))?
+            _ => Err("incompatible component type")?
           };
           let buffer_view: &BufferView = match accessor.buffer_view { 
             Some(idx) => match buffer_views.get(idx) { 
               Some(v) => v,
-              None => Err(GltfError::from("No buffer view found for indices!"))?
+              None => Err("No buffer view found for indices!")?
             },
-            None => Err(GltfError::from("Accessor for indices has no buffer view defined!"))?
+            None => Err("Accessor for indices has no buffer view defined!")?
           };
           let byte_offset = buffer_view.byte_offset.unwrap_or(0) + accessor_byte_offset;
           let buffer: &Vec<u8> = match &bin.get(buffer_view.buffer) { 
             Some(v) => v, 
-            None => Err(GltfError::from("Buffer view contains invalid buffer index!"))? 
+            None => Err("Buffer view contains invalid buffer index!")? 
           };
           let buffer_data = match buffer.get(byte_offset..byte_offset+byte_length) {
             Some(v) => v,
-            None => Err(GltfError::from("Buffer did not contain required slice!"))?
+            None => Err("Buffer did not contain required slice!")?
           };
 
           let prim_indices: Vec<u32> = match accessor.component_type {
@@ -2742,7 +2743,7 @@ impl Engine
               buffer_data.chunks_exact(size_of::<u32>()).map(|chunk| 
                 u32::from_le_bytes(chunk.try_into().unwrap()) + v_offset).collect()
             },
-            _ => { Err(GltfError::from("incompatible indices component type!"))? }
+            _ => { Err("incompatible indices component type!")? }
           };
 
           indices.extend(&prim_indices);
@@ -2763,19 +2764,19 @@ impl Engine
         // Load UVs
         let accessor: Option<&Accessor> = match prim.attributes.get(&String::from("TEXCOORD_0")) {
           Some(accessor_idx) => match accessors.get(*accessor_idx) { 
-            Some(v) => Some(v), None => Err(GltfError::from("No texture coordinates data found!"))?
+            Some(v) => Some(v), None => Err("No texture coordinates data found!")?
           }, None => None
         };
         let buffer_view: Option<&BufferView> = match &accessor {
           Some(accessor) => match accessor.buffer_view { 
-            Some(idx) => match buffer_views.get(idx) { Some(v) => Some(v), None => Err(GltfError::from("No buffer view found for texture coordinates!"))?}, 
-            None => Err(GltfError::from("Accessor for vertex texture coordinates must have a defined buffer view!"))?
+            Some(idx) => match buffer_views.get(idx) { Some(v) => Some(v), None => Err("No buffer view found for texture coordinates!")?}, 
+            None => Err("Accessor for vertex texture coordinates must have a defined buffer view!")?
           }, None => None
         };
         let buffer: Option<&Vec<u8>> = match &buffer_view {
           Some(buffer_view) => match &bin.get(buffer_view.buffer) { 
             Some(v) => Some(v), 
-            None => Err(GltfError::from("Buffer view contains invalid buffer index!"))? 
+            None => Err("Buffer view contains invalid buffer index!")? 
           }, None => None
         };
         let uvs: Vec<glm::Vec2> = match buffer {
@@ -2790,19 +2791,19 @@ impl Engine
         // Load colours
         let accessor: Option<&Accessor> = match prim.attributes.get(&String::from("COLOR_0")) {
           Some(accessor_idx) => match accessors.get(*accessor_idx) { 
-            Some(v) => Some(v), None => Err(GltfError::from("No vertex colour data found!"))?
+            Some(v) => Some(v), None => Err("No vertex colour data found!")?
           }, None => None
         };
         let buffer_view: Option<&BufferView> = match &accessor {
           Some(accessor) => match accessor.buffer_view { 
-            Some(idx) => match buffer_views.get(idx) { Some(v) => Some(v), None => Err(GltfError::from("No buffer view found for vertex colours!"))?}, 
-            None => Err(GltfError::from("Accessor for vertex colours must have a defined buffer view!"))?
+            Some(idx) => match buffer_views.get(idx) { Some(v) => Some(v), None => Err("No buffer view found for vertex colours!")?}, 
+            None => Err("Accessor for vertex colours must have a defined buffer view!")?
           }, None => None
         };
         let buffer: Option<&Vec<u8>> = match &buffer_view {
           Some(buffer_view) => match &bin.get(buffer_view.buffer) { 
             Some(v) => Some(v), 
-            None => Err(GltfError::from("Buffer view contains invalid buffer index!"))? 
+            None => Err("Buffer view contains invalid buffer index!")? 
           }, None => None
         };
         let cols: Vec<glm::Vec3> = match buffer {
@@ -2817,19 +2818,19 @@ impl Engine
         // Load normals
         let accessor: Option<&Accessor> = match prim.attributes.get(&String::from("NORMAL")) {
           Some(accessor_idx) => match accessors.get(*accessor_idx) { 
-            Some(v) => Some(v), None => Err(GltfError::from("No normals data found!"))?
+            Some(v) => Some(v), None => Err("No normals data found!")?
           }, None => None
         };
         let buffer_view: Option<&BufferView> = match &accessor {
           Some(accessor) => match accessor.buffer_view { 
-            Some(idx) => match buffer_views.get(idx) { Some(v) => Some(v), None => Err(GltfError::from("No buffer view found for vertex normals!"))?}, 
-            None => Err(GltfError::from("Accessor for vertex normals must have a defined buffer view!"))?
+            Some(idx) => match buffer_views.get(idx) { Some(v) => Some(v), None => Err("No buffer view found for vertex normals!")?}, 
+            None => Err("Accessor for vertex normals must have a defined buffer view!")?
           }, None => None
         };
         let buffer: Option<&Vec<u8>> = match &buffer_view {
           Some(buffer_view) => match &bin.get(buffer_view.buffer) { 
             Some(v) => Some(v), 
-            None => Err(GltfError::from("Buffer view contains invalid buffer index!"))? 
+            None => Err("Buffer view contains invalid buffer index!")? 
           }, None => None
         };
         let norms: Vec<glm::Vec3> = match buffer {
@@ -2844,19 +2845,19 @@ impl Engine
         // Load tangents
         let accessor: Option<&Accessor> = match prim.attributes.get(&String::from("TANGENT")) {
           Some(accessor_idx) => match accessors.get(*accessor_idx) { 
-            Some(v) => Some(v), None => Err(GltfError::from("No tangent data found!"))?
+            Some(v) => Some(v), None => Err("No tangent data found!")?
           }, None => None
         };
         let buffer_view: Option<&BufferView> = match &accessor {
           Some(accessor) => match accessor.buffer_view { 
-            Some(idx) => match buffer_views.get(idx) { Some(v) => Some(v), None => Err(GltfError::from("No buffer view found for vertex tangents!"))?}, 
-            None => Err(GltfError::from("Accessor for vertex tangents must have a defined buffer view!"))?
+            Some(idx) => match buffer_views.get(idx) { Some(v) => Some(v), None => Err("No buffer view found for vertex tangents!")?}, 
+            None => Err("Accessor for vertex tangents must have a defined buffer view!")?
           }, None => None
         };
         let buffer: Option<&Vec<u8>> = match &buffer_view {
           Some(buffer_view) => match &bin.get(buffer_view.buffer) { 
             Some(v) => Some(v), 
-            None => Err(GltfError::from("Buffer view contains invalid buffer index!"))? 
+            None => Err("Buffer view contains invalid buffer index!")? 
           }, None => None
         };
         let tangents: Vec<glm::Vec4> = match buffer {
@@ -2884,10 +2885,10 @@ impl Engine
 
         submeshes.push( SubMesh {
           index_offset: start_offset,
-          index_count: u32::try_from(indices.len())? - initial_indices_count,
-          material_id: u32::try_from(mat_idx)?,
+          index_count: u32::try_from(indices.len()).map_err(|e| e.to_string())? - initial_indices_count,
+          material_id: u32::try_from(mat_idx).map_err(|e| e.to_string())?,
           first_vertex: initial_v_offset,
-          max_vertex: initial_v_offset + u32::try_from(vertices.len())?,
+          max_vertex: initial_v_offset + u32::try_from(vertices.len()).map_err(|e| e.to_string())?,
           alpha_cut: match material {
             Some(mat) => if mat.alpha_mode == MaterialAlphaMode::Opaque { vk::FALSE } else { vk::TRUE },
             None => vk::FALSE
@@ -2899,12 +2900,12 @@ impl Engine
     }
 
     if let Some(children) = &node.children {
-      children.iter().try_for_each(|&idx| -> anyhow::Result<()> {
+      children.iter().try_for_each(|&idx| -> Result<(), String> {
         let (loaded_vertices, loaded_indices, loaded_submeshes) = 
           Self::load_node(
             nodes.get(idx).unwrap(), nodes, accessors, buffer_views, meshes, base, bin, 
-            initial_v_offset + u32::try_from(vertices.len())?, 
-            initial_index_offset + u32::try_from(indices.len())?, &world_matrix
+            initial_v_offset + u32::try_from(vertices.len()).map_err(|e| e.to_string())?, 
+            initial_index_offset + u32::try_from(indices.len()).map_err(|e| e.to_string())?, &world_matrix
           )?;
         vertices.extend(loaded_vertices);
         indices.extend(loaded_indices);
@@ -2918,16 +2919,16 @@ impl Engine
 
   fn node_has_valid_children(nodes: &Vec<Node>, children_indices: &Vec<usize>) -> bool
   {
-    match children_indices.iter().try_for_each(|&idx| -> anyhow::Result<()> {
+    match children_indices.iter().try_for_each(|&idx| -> Result<(), String> {
       if let Some(child) = nodes.get(idx).as_ref() {
         match &child.children {
           Some(children) => match Self::node_has_valid_children(nodes, &children) { 
-            true => (), false => Err(GltfError::from("Invalid node index!"))?
+            true => (), false => Err("Invalid node index!")?
           }, None => ()
         };
         Ok(())
       } else {
-        Err(GltfError::from("Invalid node index!"))?
+        Err("Invalid node index!")?
       }
     }) {
       Ok(_) => true,
@@ -2935,56 +2936,56 @@ impl Engine
     }
   }
 
-  pub fn load_geometry(base: &GltfDocument, bin: &Vec<Vec<u8>>, initial_v_offset: u32, initial_index_offset: u32) -> anyhow::Result<(Vec<Vertex>, Vec<u32>, Vec<SubMesh>)>
+  pub fn load_geometry(base: &GltfDocument, bin: &Vec<Vec<u8>>, initial_v_offset: u32, initial_index_offset: u32) -> Result<(Vec<Vertex>, Vec<u32>, Vec<SubMesh>), String>
   {
     let mut vertices: Vec<Vertex> = Vec::new();
     let mut indices: Vec<u32> = Vec::new();
     let mut submeshes: Vec<SubMesh> = Vec::new();
 
     // Only load if there is a default scene
-    if base.scene.is_none() { Err(GltfError::from("No default scene found!"))?}
+    if base.scene.is_none() { Err("No default scene found!")?}
     let scene: &Scene = match base.scenes.as_ref() {
-      Some(scenes) => match scenes.get(base.scene.unwrap()) { Some(v) => v, None => Err(GltfError::from("`scene` did not contain a valid index!"))?},
-      None => Err(GltfError::from("No scene data found!"))?
+      Some(scenes) => match scenes.get(base.scene.unwrap()) { Some(v) => v, None => Err("`scene` did not contain a valid index!")?},
+      None => Err("No scene data found!")?
     };
-    let node_indices: &Vec<usize> = match scene.nodes.as_ref() { Some(nodes) => nodes, None => Err(GltfError::from("No nodes found in scene!"))? };
+    let node_indices: &Vec<usize> = match scene.nodes.as_ref() { Some(nodes) => nodes, None => Err("No nodes found in scene!")? };
 
     // Scene exists, make sure required data views exist
     let accessors = match base.accessors.as_ref() {
       Some(accessors) => accessors,
-      None => Err(GltfError::from("Document needs accessors to get mesh data!"))?
+      None => Err("Document needs accessors to get mesh data!")?
     };
     let buffer_views = match base.buffer_views.as_ref() {
       Some(buffer_views) => buffer_views,
-      None => Err(GltfError::from("Document needs buffer views to get mesh data!"))?
+      None => Err("Document needs buffer views to get mesh data!")?
     };
     let meshes = match base.meshes.as_ref() {
       Some(meshes) => meshes,
-      None => Err(GltfError::from("Document needs meshes to get mesh data!"))?
+      None => Err("Document needs meshes to get mesh data!")?
     };
     let nodes = match base.nodes.as_ref() {
       Some(nodes) => nodes,
-      None => Err(GltfError::from("Document needs nodes to get mesh data!"))?
+      None => Err("Document needs nodes to get mesh data!")?
     };
 
     // Check nodes and child nodes are valid
-    let _ = node_indices.iter().try_for_each(|&idx| -> anyhow::Result<()> {
+    let _ = node_indices.iter().try_for_each(|&idx| -> Result<(), String> {
       match &nodes.get(idx) {
         Some(node) => match &node.children {
           Some(children_indices) => {
             match Self::node_has_valid_children(&nodes, &children_indices) { 
               true => Ok(()), 
-              _ => Err(GltfError::from("Invalid node index!"))?
+              _ => Err("Invalid node index!")?
             }}, None => Ok(())
-        }, None => Err(GltfError::from("Invalid node index!"))?
+        }, None => Err("Invalid node index!")?
       }
     });
 
-    node_indices.iter().try_for_each(|&node_idx| -> anyhow::Result<()> {
+    node_indices.iter().try_for_each(|&node_idx| -> Result<(), String> {
       let node = nodes.get(node_idx).unwrap();
       let (loaded_verts, loaded_indices, loaded_submeshes) = 
         Self::load_node(&node, nodes, accessors, buffer_views, meshes, base, bin, 
-          initial_v_offset + u32::try_from(vertices.len())?, initial_index_offset + u32::try_from(indices.len())?, 
+          initial_v_offset + u32::try_from(vertices.len()).map_err(|e| e.to_string())?, initial_index_offset + u32::try_from(indices.len()).map_err(|e| e.to_string())?, 
           &glm::Mat4::identity()
         )?;
       vertices.extend(loaded_verts);

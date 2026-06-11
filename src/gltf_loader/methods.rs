@@ -1,14 +1,14 @@
-use std::{any::{type_name}, fs, path::PathBuf};
+use std::{any::type_name, fs, path::PathBuf, str::FromStr};
 
-use iri_string::{percent_encode::PercentEncoded, spec::IriSpec, types::{IriReferenceStr, IriReferenceString, IriStr}, validate::iri_reference};
+use iri_string::{percent_encode::PercentEncoded, spec::IriSpec, types::IriReferenceStr};
 use serde::{Deserialize, Deserializer, Serializer, de::Error};
 use base64::{engine::general_purpose::STANDARD, Engine as _};
 
-use crate::gltf_loader::{GltfDocument, Validatable, enums::{MeshPrimitiveMode, Undefinable}, error::GltfError};
+use crate::gltf_loader::{GltfDocument, Validatable, enums::{MeshPrimitiveMode, Undefinable}};
 
 impl GltfDocument {
-  pub fn load(path: &PathBuf) -> anyhow::Result<(Self, Vec<Vec<u8>>)> {
-    let parsed: Result<GltfDocument, serde_json::Error> = serde_json::from_str(&fs::read_to_string(path)?);
+  pub fn load(path: &PathBuf) -> Result<(Self, Vec<Vec<u8>>), String> {
+    let parsed: Result<GltfDocument, serde_json::Error> = serde_json::from_str(match &fs::read_to_string(path) { Ok(v) => v, Err(e) => Err(e.to_string())?});
 
     if let Ok(loaded) = parsed {
       loaded.is_valid(&loaded)?;
@@ -55,40 +55,40 @@ impl GltfDocument {
         { textures    .iter().try_for_each(|texture|      texture     .is_valid(&loaded))? };
       
       let mut loaded_buffers: Vec<Vec<u8>> = Vec::new();
-      let parent_path = match path.parent() { Some(v) => v, None => Err(GltfError::from("failed to get parent path!"))? };
+      let parent_path = match path.parent() { Some(v) => v, None => Err(&"failed to get parent path!".to_string())? };
       if let Some(buffers)      = &loaded.buffers
         {
-          let _ = buffers.iter().try_for_each(|buffer| -> anyhow::Result<()>
+          let _ = buffers.iter().try_for_each(|buffer| -> Result<(), String>
             { 
               if let Some(uri) = &buffer.uri {
                 const VALID_URI_MIME_TYPES: &[&str] = &[
                   "application/octet-stream", "application/gltf-buffer"
                 ];
-                let encoded_iri = IriReferenceStr::new(uri)?;
+                let encoded_iri = match IriReferenceStr::new(uri) { Ok(v) => v, Err(e) => Err(e.to_string())?};
                 if encoded_iri.scheme_str() != Some("data") { 
                   let decoded_uri = iri_string::percent_encode::decode::decode_whatwg_bytes(uri.as_bytes());
-                  match fs::read(parent_path.join(decoded_uri.into_string()?)) {
+                  match fs::read(parent_path.join(match decoded_uri.into_string() { Ok(v) => v, Err(e) => Err(e.to_string())?})) {
                     Ok(bytes_vec) => loaded_buffers.push(bytes_vec.clone()),
-                    Err(e) => Err(e)?
+                    Err(e) => Err(e.to_string())?
                   }
                 }
                 let body = match encoded_iri.as_str().strip_prefix("data:") {
-                  Some(v) => v, None => Err(GltfError::from("Invalid embedded buffer!"))?
+                  Some(v) => v, None => Err("Invalid embedded buffer!".to_string())?
                 };
                 let mut segments = body.split(|c| c == ';' || c == ',');
                 
                 let mime_type = (match segments.next() {
-                  Some(v) => v, None => Err(GltfError::from("Failed to get mime type from uri!"))?
+                  Some(v) => v, None => Err("Failed to get mime type from uri!".to_string())?
                 }).trim();
                 println!("{}", mime_type);
-                if !VALID_URI_MIME_TYPES.contains(&mime_type) { Err(GltfError::from("Uri contained invalid mime type!"))? };
+                if !VALID_URI_MIME_TYPES.contains(&mime_type) { Err("Uri contained invalid mime type!".to_string())? };
                 let rest = segments.next();
                 if rest == Some("base64") {
                   let data = match segments.last() {
                     Some(enc_v) => match STANDARD.decode(enc_v) {
-                      Ok(v) => v, Err(e) => Err(e)?
+                      Ok(v) => v, Err(e) => Err(e.to_string())?
                     },
-                    None => Err(GltfError::from("No data found in uri!"))?
+                    None => Err("No data found in uri!".to_string())?
                   };
                   loaded_buffers.push(data);
                 }
@@ -100,7 +100,7 @@ impl GltfDocument {
       Ok((loaded, loaded_buffers))
     }
     else {
-      Err(parsed.unwrap_err().into())
+      Err(parsed.unwrap_err().to_string())
     }
   }
 }

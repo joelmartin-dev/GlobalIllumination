@@ -1,10 +1,8 @@
 pub mod enums;
 mod methods;
 pub mod test;
-pub mod error;
 
 use std::{collections::HashMap, fmt::{Debug, Display}};
-use anyhow;
 use regex::Regex;
 use serde::{Deserialize, Serialize};
 use serde_json::{Value, Map};
@@ -22,48 +20,48 @@ use methods::{
   deserialize_string_to_iri
 };
 
-use crate::gltf_loader::{enums::{BufferViewTarget, CameraType, ImageMimeType}, error::GltfError};
+use crate::gltf_loader::{enums::{BufferViewTarget, CameraType, ImageMimeType}};
 
-trait Validatable { fn is_valid(&self, base: &GltfDocument) -> anyhow::Result<()>; }
+trait Validatable { fn is_valid(&self, base: &GltfDocument) -> Result<(), String>; }
 
-fn check_for_dup_items<T>(v: &Vec<T>, name: &str) -> anyhow::Result<()> 
+fn check_for_dup_items<T>(v: &Vec<T>, name: &str) -> Result<(), String> 
 where T: PartialEq + Ord + Clone
 {
   let mut copy = v.clone();
   copy.sort();
   let has_dup = copy.windows(2).any(|items| { items[0] == items[1] });
   if has_dup {
-    Err(GltfError::from(format!("`{}` must have unique items!", name)))?
+    Err(format!("`{}` must have unique items!", name))?
   }
   Ok(())
 }
 
-fn check_if_empty<T>(v: &Vec<T>, name: &str) -> anyhow::Result<()>
+fn check_if_empty<T>(v: &Vec<T>, name: &str) -> Result<(), String>
 {
-  if v.is_empty() { Err(GltfError::from(format!("`{}` must hold at least one item!", name)))? }
+  if v.is_empty() { Err(format!("`{}` must hold at least one item!", name))? }
   Ok(())
 }
 
-fn check_items_for_min_val<T>(v: &[T], min: T, name: &str) -> anyhow::Result<()>
+fn check_items_for_min_val<T>(v: &[T], min: T, name: &str) -> Result<(), String>
 where T: PartialOrd + Display + Copy
 {
   let has_lt_min = v.iter().any(|&item| item < min); 
   if has_lt_min { if v.len() > 1 {
-    Err(GltfError::from(format!("Each item of `{}` must be greater than or equal to {}!", name, min)))?
+    Err(format!("Each item of `{}` must be greater than or equal to {}!", name, min))?
   } else {
-    Err(GltfError::from(format!("`{}` must be greater than or equal to {}!", name, min)))?
+    Err(format!("`{}` must be greater than or equal to {}!", name, min))?
   }};
   Ok(())
 }
 
-fn check_items_for_max_val<T>(v: &[T], max: T, name: &str) -> anyhow::Result<()>
+fn check_items_for_max_val<T>(v: &[T], max: T, name: &str) -> Result<(), String>
 where T: PartialOrd + Display + Copy
 {
   let has_gt_max = v.iter().any(|&item| item > max); 
   if has_gt_max { if v.len() > 1 {
-    Err(GltfError::from(format!("Each item of `{}` must be less than or equal to {}!", name, max)))? 
+    Err(format!("Each item of `{}` must be less than or equal to {}!", name, max))? 
   } else {
-    Err(GltfError::from(format!("`{}` must be less than or equal to {}!", name, max)))? 
+    Err(format!("`{}` must be less than or equal to {}!", name, max))? 
   }};
   Ok(())
 }
@@ -111,19 +109,19 @@ pub struct GltfDocument {
   pub extras: Option<Extra>,
 }
 impl Validatable for GltfDocument {
-  fn is_valid(&self, _base: &GltfDocument) -> anyhow::Result<()> {
+  fn is_valid(&self, _base: &GltfDocument) -> Result<(), String> {
     if let Some(ext_used)     = &self.extensions_used     { check_if_empty(ext_used,      "extensionsUsed"    )? ; 
                                                             check_for_dup_items(ext_used, "extensionsUsed"    )? ;
                                                             // match ["KHR_materials_anisotropy"].iter().any(|ext| ext_used.iter().any(|used_ext| ext == used_ext)) {
                                                             //   true => (),
-                                                            //   false => Err(GltfError::from(format!("Unsupported extensions found: {:?}", ext_used)))? 
+                                                            //   false => Err(format!("Unsupported extensions found: {:?}", ext_used)))? 
                                                             // }
                                                             }
     if let Some(ext_req)      = &self.extensions_required { check_if_empty(ext_req,       "extensionsRequired")? ; 
                                                             check_for_dup_items(ext_req,  "extensionsRequired")? ;
                                                             // match ["KHR_materials_anisotropy"].iter().any(|ext| ext_req.iter().any(|req_ext| ext == req_ext)) {
                                                             //   true => (),
-                                                            //   false => Err(GltfError::from(format!("Unsupported extensions found: {:?}", ext_req)))?  
+                                                            //   false => Err(format!("Unsupported extensions found: {:?}", ext_req)))?  
                                                             // }
                                                             }
     if let Some(accessors)    = &self.accessors           { check_if_empty(accessors,     "accessors"         )? }
@@ -141,7 +139,7 @@ impl Validatable for GltfDocument {
     if let Some(textures)     = &self.textures            { check_if_empty(textures,      "textures"          )? }
 
     if let Some(scene) = &self.scene {
-      if self.scenes.is_none()  { Err(GltfError::from(format!("`scene` must not be defined, when `scenes` is not defined")))?}
+      if self.scenes.is_none()  { Err(format!("`scene` must not be defined, when `scenes` is not defined"))?}
       check_items_for_min_val(Vec::from([scene.clone()]).as_ref(), 0, "scene")?;
     }
     Ok(())
@@ -203,52 +201,52 @@ pub struct Accessor {
   pub extras: Option<Extra>,
 }
 impl Validatable for Accessor {
-  fn is_valid(&self, base: &GltfDocument) -> anyhow::Result<()> {
+  fn is_valid(&self, base: &GltfDocument) -> Result<(), String> {
     if let Some(buffer_view) = 
       self.buffer_view { check_items_for_min_val(&[buffer_view], 0, "accessor.bufferView")? };
     if let Some(byte_offset) = 
       self.byte_offset { 
         if self.buffer_view.is_none() { 
-          Err(GltfError::from(format!("`accessor.byteOffset` must not be defined when `accessor.bufferView` is undefined!")))? 
+          Err(format!("`accessor.byteOffset` must not be defined when `accessor.bufferView` is undefined!"))? 
         }
         check_items_for_min_val(&[byte_offset], 0, "accessor.byteOffset")?;
         match self.component_type {
-          ComponentType::Short => { if byte_offset % 2 != 0 { Err(GltfError::from(format!(
-            "`accessor.byteOffset` must be a multiple of the `accessor.componentType` datatype!")))?
+          ComponentType::Short => { if byte_offset % 2 != 0 { Err(format!(
+            "`accessor.byteOffset` must be a multiple of the `accessor.componentType` datatype!"))?
           }},
-          ComponentType::UnsignedShort => { if byte_offset % 2 != 0 { Err(GltfError::from(format!(
-            "`accessor.byteOffset` must be a multiple of the `accessor.componentType` datatype!")))?
+          ComponentType::UnsignedShort => { if byte_offset % 2 != 0 { Err(format!(
+            "`accessor.byteOffset` must be a multiple of the `accessor.componentType` datatype!"))?
           }},
-          ComponentType::UnsignedInt => {if byte_offset % 4 != 0 { Err(GltfError::from(format!(
-            "`accessor.byteOffset` must be a multiple of the `accessor.componentType` datatype!")))?
+          ComponentType::UnsignedInt => {if byte_offset % 4 != 0 { Err(format!(
+            "`accessor.byteOffset` must be a multiple of the `accessor.componentType` datatype!"))?
           }},
-          ComponentType::Float => {if byte_offset % 4 != 0 { Err(GltfError::from(format!(
-            "`accessor.byteOffset` must be a multiple of the `accessor.componentType` datatype!")))?
+          ComponentType::Float => {if byte_offset % 4 != 0 { Err(format!(
+            "`accessor.byteOffset` must be a multiple of the `accessor.componentType` datatype!"))?
           }},
-          ComponentType::Undefined => Err(GltfError::from(format!("Invalid `accessor.componentType`")))?,
+          ComponentType::Undefined => Err(format!("Invalid `accessor.componentType`"))?,
           _ => ()
         } 
       };
     if self.normalized && (self.component_type == ComponentType::UnsignedInt || self.component_type == ComponentType::Float) {
-      Err(GltfError::from(format!("`accessor.normalized` must not be `true` for accessors with `FLOAT` or `UNSIGNED_INT` component type!")))?
+      Err(format!("`accessor.normalized` must not be `true` for accessors with `FLOAT` or `UNSIGNED_INT` component type!"))?
     }
     check_items_for_min_val(&[self.count], 1, "`accessor.count`")?;
     if (self.min.is_none() && self.max.is_some()) || (self.min.is_some() && self.max.is_none()) {
-      Err(GltfError::from(format!("`accessor.min` and `accessor.max` must have same length!")))?
+      Err(format!("`accessor.min` and `accessor.max` must have same length!"))?
     }
     if let (Some(min), Some(max)) = (&self.min, &self.max) {
       if min.len() != max.len() {
-        Err(GltfError::from(format!("`accessor.min` and `accessor.max` must have same length!")))?
+        Err(format!("`accessor.min` and `accessor.max` must have same length!"))?
       }
       match self.ty {
-        AccessorType::Scalar => { if min.len() != 1 { Err(GltfError::from(format!("The lengths of `accessor.min` and `accessor.max` must match `accessor.type`")))? }},
-        AccessorType::Vec2 => { if min.len() != 2 { Err(GltfError::from(format!("The lengths of `accessor.min` and `accessor.max` must match `accessor.type`")))? }},
-        AccessorType::Vec3 => { if min.len() != 3 { Err(GltfError::from(format!("The lengths of `accessor.min` and `accessor.max` must match `accessor.type`")))? }},
-        AccessorType::Vec4 => { if min.len() != 4 { Err(GltfError::from(format!("The lengths of `accessor.min` and `accessor.max` must match `accessor.type`")))? }},
-        AccessorType::Mat2 => { if min.len() != 4 { Err(GltfError::from(format!("The lengths of `accessor.min` and `accessor.max` must match `accessor.type`")))? }},
-        AccessorType::Mat3 => { if min.len() != 9 { Err(GltfError::from(format!("The lengths of `accessor.min` and `accessor.max` must match `accessor.type`")))? }},
-        AccessorType::Mat4 => { if min.len() != 16 { Err(GltfError::from(format!("The lengths of `accessor.min` and `accessor.max` must match `accessor.type`")))? }},
-        _ => Err(GltfError::from(format!("Invalid `accessor.type`")))?
+        AccessorType::Scalar => { if min.len() != 1 { Err(format!("The lengths of `accessor.min` and `accessor.max` must match `accessor.type`"))? }},
+        AccessorType::Vec2 => { if min.len() != 2 { Err(format!("The lengths of `accessor.min` and `accessor.max` must match `accessor.type`"))? }},
+        AccessorType::Vec3 => { if min.len() != 3 { Err(format!("The lengths of `accessor.min` and `accessor.max` must match `accessor.type`"))? }},
+        AccessorType::Vec4 => { if min.len() != 4 { Err(format!("The lengths of `accessor.min` and `accessor.max` must match `accessor.type`"))? }},
+        AccessorType::Mat2 => { if min.len() != 4 { Err(format!("The lengths of `accessor.min` and `accessor.max` must match `accessor.type`"))? }},
+        AccessorType::Mat3 => { if min.len() != 9 { Err(format!("The lengths of `accessor.min` and `accessor.max` must match `accessor.type`"))? }},
+        AccessorType::Mat4 => { if min.len() != 16 { Err(format!("The lengths of `accessor.min` and `accessor.max` must match `accessor.type`"))? }},
+        _ => Err(format!("Invalid `accessor.type`"))?
       }
     }
     if let Some(sparse) = &self.sparse { sparse.is_valid(base)? };
@@ -270,7 +268,7 @@ pub struct Animation {
   pub extras: Option<Extra>,
 }
 impl Validatable for Animation {
-  fn is_valid(&self, base: &GltfDocument) -> anyhow::Result<()> {
+  fn is_valid(&self, base: &GltfDocument) -> Result<(), String> {
     check_if_empty(&self.channels, "animation.channels")?;
     check_if_empty(&self.samplers, "animation.channels")?;
     self.channels.iter().try_for_each(|c| c.is_valid(base) )?;
@@ -297,26 +295,26 @@ pub struct Asset {
   pub extras: Option<Extra>,
 }
 impl Validatable for Asset {
-  fn is_valid(&self, _base: &GltfDocument) -> anyhow::Result<()> {
+  fn is_valid(&self, _base: &GltfDocument) -> Result<(), String> {
     let version_regex = Regex::new("^[0-9]+\\.[0-9]+$").unwrap();
     if !version_regex.is_match(&self.version) {
-      Err(GltfError::from(format!("`asset.version` must match regex: ^[0-9]+\\.[0-9]+$")))?
+      Err(format!("`asset.version` must match regex: ^[0-9]+\\.[0-9]+$"))?
     }
     if self.min_version.is_some() {
       let min_version = self.min_version.as_ref().unwrap();
       if !version_regex.is_match(min_version) {
-        Err(GltfError::from(format!("`asset.version` must match regex: ^[0-9]+\\.[0-9]+$")))?
+        Err(format!("`asset.version` must match regex: ^[0-9]+\\.[0-9]+$"))?
       }
       let version_parts: Vec<&str> = self.version.split(".").collect();
       let min_version_parts: Vec<&str> = min_version.split(".").collect();
       if version_parts.len() == 2 && version_parts.len() == min_version_parts.len() {
         if version_parts[0] >= min_version_parts[0] {
           if version_parts[1] < min_version_parts[1] {
-            Err(GltfError::from(format!("`asset.min_version` must be less than or equal to `asset.version`")))?
+            Err(format!("`asset.min_version` must be less than or equal to `asset.version`"))?
           }
         }
         else {
-          Err(GltfError::from(format!("`asset.min_version` must be less than or equal to `asset.version`")))?
+          Err(format!("`asset.min_version` must be less than or equal to `asset.version`"))?
         }
       }
     }
@@ -339,7 +337,7 @@ pub struct Buffer {
   pub extras: Option<Extra>,
 }
 impl Validatable for Buffer {
-  fn is_valid(&self, _base: &GltfDocument) -> anyhow::Result<()> {
+  fn is_valid(&self, _base: &GltfDocument) -> Result<(), String> {
     // if let Some(uri) = &self.uri.as_ref() {
     //   match iri_reference::<IriSpec>(uri) { Ok(_) => (), Err(e) => Err(e)?};
     // };
@@ -376,14 +374,14 @@ pub struct BufferView {
   pub extras: Option<Extra>,
 }
 impl Validatable for BufferView {
-  fn is_valid(&self, _base: &GltfDocument) -> anyhow::Result<()> {
+  fn is_valid(&self, _base: &GltfDocument) -> Result<(), String> {
     check_items_for_min_val(&[self.buffer], 0, "bufferView.buffer")?;
     if let Some(byte_offset) = self.byte_offset { check_items_for_min_val(&[byte_offset], 0, "bufferView.byteOffset")? };
     check_items_for_min_val(&[self.byte_length], 1, "bufferView.byteLength")?;
     if let Some(byte_stride) = self.byte_stride {
       check_items_for_min_val(&[byte_stride], 4, "bufferView.byteStride")?;
       check_items_for_max_val(&[byte_stride], 252, "bufferView.byteStride")?;
-      if byte_stride % 4 != 0 { Err(GltfError::from(format!("`bufferView.byteStride` must be a multiple of 4!")))? }
+      if byte_stride % 4 != 0 { Err(format!("`bufferView.byteStride` must be a multiple of 4!"))? }
     }
     Ok(())
   }
@@ -410,21 +408,21 @@ pub struct Camera {
   pub extras: Option<Extra>,
 }
 impl Validatable for Camera {
-  fn is_valid(&self, base: &GltfDocument) -> anyhow::Result<()> {
+  fn is_valid(&self, base: &GltfDocument) -> Result<(), String> {
     if self.orthographic.is_some() && self.perspective.is_some() {
-      Err(GltfError::from(format!("`camera.perspective` and `camera.orthographic` must not both be defined!")))?
+      Err(format!("`camera.perspective` and `camera.orthographic` must not both be defined!"))?
     }
     if self.orthographic.is_none() && self.perspective.is_none() {
-      Err(GltfError::from(format!("One of `camera.perspective` and `camera.orthographic` must be defined!")))?
+      Err(format!("One of `camera.perspective` and `camera.orthographic` must be defined!"))?
     }
     match self.ty {
       CameraType::Orthographic => if self.orthographic.is_none() {
-        Err(GltfError::from(format!("`camera.orthographic` must be defined when `camera.type` is `orthographic`!")))?
+        Err(format!("`camera.orthographic` must be defined when `camera.type` is `orthographic`!"))?
       },
       CameraType::Perspective => if self.perspective.is_none() {
-        Err(GltfError::from(format!("`camera.perspective` must be defined when `camera.type` is `perspective`!")))?
+        Err(format!("`camera.perspective` must be defined when `camera.type` is `perspective`!"))?
       },
-      CameraType::Undefined => Err(GltfError::from(format!("Invalid `camera.type`")))?
+      CameraType::Undefined => Err(format!("Invalid `camera.type`"))?
     }
     if let Some(orthographic) = &self.orthographic { orthographic.is_valid(base)? };
     if let Some(perspective) = &self.perspective { perspective.is_valid(base)? };
@@ -455,12 +453,12 @@ pub struct Image {
   pub extras: Option<Extra>,
 }
 impl Validatable for Image {
-  fn is_valid(&self, _base: &GltfDocument) -> anyhow::Result<()> {
+  fn is_valid(&self, _base: &GltfDocument) -> Result<(), String> {
     if self.uri.is_some() && self.buffer_view.is_some() {
-      Err(GltfError::from(format!("`image.uri` and `image.bufferView` must not both be defined!")))?
+      Err(format!("`image.uri` and `image.bufferView` must not both be defined!"))?
     }
     if self.mime_type.is_some() && self.buffer_view.is_some() {
-      Err(GltfError::from(format!("`image.mimeType` must not be defined when `image.bufferView` is defined!")))?
+      Err(format!("`image.mimeType` must not be defined when `image.bufferView` is defined!"))?
     }
     if let Some(buffer_view) = self.buffer_view {
       check_items_for_min_val(&[buffer_view], 0, "image.bufferView")?
@@ -524,11 +522,11 @@ pub struct Material {
   pub extras: Option<Extra>,
 }
 impl Validatable for Material {
-  fn is_valid(&self, base: &GltfDocument) -> anyhow::Result<()> {
+  fn is_valid(&self, base: &GltfDocument) -> Result<(), String> {
     check_items_for_min_val(&self.emissive_factor, 0.0, "material.emissiveFactor")?;
     check_items_for_max_val(&self.emissive_factor, 1.0, "material.emissiveFactor")?;
     if self.alpha_cutoff != 0.5 && self.alpha_mode == MaterialAlphaMode::Opaque {
-      Err(GltfError::from(format!("`material.alphaCutoff` must not be defined when `material.alphaMode` is not defined!")))?
+      Err(format!("`material.alphaCutoff` must not be defined when `material.alphaMode` is not defined!"))?
     }
     if let Some(emissive_tex_info) = &self.emissive_texture { emissive_tex_info.is_valid(base)? };
     if let Some(pbr_met_rough) = &self.pbr_metallic_roughness { pbr_met_rough.is_valid(base)? };
@@ -551,7 +549,7 @@ pub struct Mesh {
   pub extras: Option<Extra>,
 }
 impl Validatable for Mesh {
-  fn is_valid(&self, _base: &GltfDocument) -> anyhow::Result<()> {
+  fn is_valid(&self, _base: &GltfDocument) -> Result<(), String> {
     check_if_empty(&self.primitives, "mesh.primitives")?;
     if let Some(weights) = &self.weights { check_if_empty(weights, "mesh.weights")? }
     Ok(())
@@ -605,7 +603,7 @@ pub struct Node {
   pub extras: Option<Extra>,
 }
 impl Validatable for Node {
-  fn is_valid(&self, _base: &GltfDocument) -> anyhow::Result<()> {
+  fn is_valid(&self, _base: &GltfDocument) -> Result<(), String> {
     if let Some(camera) = self.camera { check_items_for_min_val(&[camera], 0, "node.camera")? }
     if let Some(children) = &self.children { 
       check_if_empty(&children, "node.children")?;
@@ -614,14 +612,14 @@ impl Validatable for Node {
     }
     if let Some(skin) = self.skin {
       check_items_for_min_val(&[skin], 0, "node.skin")?;
-      if self.mesh.is_none() { Err(GltfError::from(format!("`node.mesh` must be defined when `node.skin` is defined!")))?}
+      if self.mesh.is_none() { Err(format!("`node.mesh` must be defined when `node.skin` is defined!"))?}
     }
     if let Some(mesh) = self.mesh { check_items_for_min_val(&[mesh], 0, "node.mesh")? }
     check_items_for_min_val(&self.rotation, -1.0, "node.rotation")?;
     check_items_for_max_val(&self.rotation, 1.0, "node.rotation")?;
     if let Some(weights) = &self.weights {
       check_if_empty(&weights, "node.weights")?;
-      if self.mesh.is_none() { Err(GltfError::from(format!("`node.mesh` must be defined when `node.weights` is defined!")))?}
+      if self.mesh.is_none() { Err(format!("`node.mesh` must be defined when `node.weights` is defined!"))?}
     }
     Ok(())
   }
@@ -663,12 +661,12 @@ pub struct Sampler {
   pub extras: Option<Extra>,
 }
 impl Validatable for Sampler {
-  fn is_valid(&self, _base: &GltfDocument) -> anyhow::Result<()> {
+  fn is_valid(&self, _base: &GltfDocument) -> Result<(), String> {
     if let Some(mag_filter) = self.mag_filter {
       match mag_filter {
         SamplerFilter::Nearest => (),
         SamplerFilter::Linear => (),
-        _ => Err(GltfError::from(format!("Invalid `sampler.magFilter` type: {:?}!", mag_filter)))?
+        _ => Err(format!("Invalid `sampler.magFilter` type: {:?}!", mag_filter))?
       }
     }
     Ok(())
@@ -684,7 +682,7 @@ pub struct Scene {
   pub extras: Option<Extra>,
 }
 impl Validatable for Scene {
-  fn is_valid(&self, _base: &GltfDocument) -> anyhow::Result<()> {
+  fn is_valid(&self, _base: &GltfDocument) -> Result<(), String> {
     if self.nodes.is_some() {
       let nodes = self.nodes.as_ref().unwrap();
       check_if_empty(nodes, "scene.nodes")?;
@@ -713,19 +711,19 @@ pub struct Skin {
   pub extras: Option<Extra>,
 }
 impl Validatable for Skin {
-  fn is_valid(&self, base: &GltfDocument) -> anyhow::Result<()> {
+  fn is_valid(&self, base: &GltfDocument) -> Result<(), String> {
     if let Some(inv_bind_mat) = 
       self.inverse_bind_matrices { 
         check_items_for_min_val(&[inv_bind_mat], 0, "skin.inverseBindMatrices")?;
       let ref_accessor: &Accessor = 
       match base.accessors.as_ref().unwrap().get(inv_bind_mat) {
           Some(v) => v,
-          None => Err(GltfError::from(format!("`skin.inverseBindMatrices` is not a valid accessor!")))?
+          None => Err(format!("`skin.inverseBindMatrices` is not a valid accessor!"))?
         };
       if ref_accessor.count < self.joints.len() {
-        Err(GltfError::from(format!(
+        Err(format!(
           "The count of referenced accessor `skin.inverseBindMatrices` must be greater than or equal to the number of elements of the `skin.joints` array!"
-        )))?
+        ))?
       }
     }
     if let Some(skeleton) = 
@@ -753,7 +751,7 @@ pub struct Texture {
   pub extras: Option<Extra>,
 }
 impl Validatable for Texture {
-  fn is_valid(&self, _base: &GltfDocument) -> anyhow::Result<()> {
+  fn is_valid(&self, _base: &GltfDocument) -> Result<(), String> {
     if let Some(sampler) = self.sampler { check_items_for_min_val(&[sampler], 0, "texture.sampler")?}
     if let Some(source) = self.source { check_items_for_min_val(&[source], 0, "texture.source")?}
     Ok(())
@@ -802,29 +800,29 @@ pub struct AccessorSparseIndices {
   pub extras: Option<Extra>,
 }
 impl Validatable for AccessorSparseIndices {
-  fn is_valid(&self, base: &GltfDocument) -> anyhow::Result<()> {
+  fn is_valid(&self, base: &GltfDocument) -> Result<(), String> {
     check_items_for_min_val(&[self.buffer_view], 0, "accessor.sparse.indices.bufferView")?;
     let ref_buf_view: &BufferView = 
       match base.buffer_views.as_ref().unwrap().get(self.buffer_view) {
           Some(v) => v,
-          None => Err(GltfError::from(format!("`accessor.sparse.indices.bufferView` is not a valid bufferView!")))?
+          None => Err(format!("`accessor.sparse.indices.bufferView` is not a valid bufferView!"))?
         };
     if ref_buf_view.target.is_some() { 
-      Err(GltfError::from(format!(
+      Err(format!(
         "The referenced bufferView `accessor.sparse.indices.bufferView` must not have its `target` property defined!"
-      )))? 
+      ))? 
     }
     if ref_buf_view.byte_stride.is_some() { 
-      Err(GltfError::from(format!(
+      Err(format!(
         "The referenced bufferView `accessor.sparse.indices.bufferView` must not have its `byteStride` property defined!"
-      )))? 
+      ))? 
     }
     check_items_for_min_val(&[self.byte_offset], 0, "accessor.sparse.indices.byteOffset")?;
     if [ComponentType::UnsignedByte, ComponentType::UnsignedShort, ComponentType::UnsignedInt]
       .iter().any(|&ty| ty == self.component_type)
     {
-      Err(GltfError::from(format!(
-        "`accessor.sparse.indices.componentType` must be any of `UNSIGNED_BYTE`, `UNSIGNED_SHORT`, or `UNSIGNED_INT`")))? 
+      Err(format!(
+        "`accessor.sparse.indices.componentType` must be any of `UNSIGNED_BYTE`, `UNSIGNED_SHORT`, or `UNSIGNED_INT`"))? 
     }
     Ok(())
   }
@@ -843,23 +841,23 @@ pub struct AccessorSparseValues {
   pub extras: Option<Extra>,
 }
 impl Validatable for AccessorSparseValues {
-  fn is_valid(&self, base: &GltfDocument) -> anyhow::Result<()> {
+  fn is_valid(&self, base: &GltfDocument) -> Result<(), String> {
     check_items_for_min_val(&[self.buffer_view], 0, "accessor.sparse.values.bufferView")?;
     let ref_buf_view: &BufferView = 
       match base.buffer_views.as_ref().unwrap().get(self.buffer_view)
         {
           Some(v) => v,
-          None => Err(GltfError::from(format!("`accessor.sparse.values.bufferView` is not a valid bufferView!"))) ?
+          None => Err(format!("`accessor.sparse.values.bufferView` is not a valid bufferView!"))?
         };
     if ref_buf_view.target.is_some() { 
-      Err(GltfError::from(format!(
+      Err(format!(
         "The referenced bufferView `accessor.sparse.values.bufferView` must not have its `target` property defined!"
-      )))? 
+      ))? 
     }
     if ref_buf_view.byte_stride.is_some() { 
-      Err(GltfError::from(format!(
+      Err(format!(
         "The referenced bufferView `accessor.sparse.values.bufferView` must not have its `byteStride` property defined!"
-      )))? 
+      ))? 
     }
     check_items_for_min_val(&[self.byte_offset], 0, "accessor.sparse.values.byteOffset")?;
     Ok(())
@@ -880,7 +878,7 @@ pub struct AccessorSparse {
   pub extras: Option<Extra>,
 }
 impl Validatable for AccessorSparse {
-  fn is_valid(&self, base: &GltfDocument) -> anyhow::Result<()> {
+  fn is_valid(&self, base: &GltfDocument) -> Result<(), String> {
     check_items_for_min_val(&[self.count], 1, "accessor.sparse.count")?;
     self.indices.is_valid(base)?;
     self.values.is_valid(base)?;
@@ -906,17 +904,17 @@ pub struct AnimationChannelTarget {
   pub extras: Option<Extra>,
 }
 impl Validatable for AnimationChannelTarget {
-  fn is_valid(&self, base: &GltfDocument) -> anyhow::Result<()> {
+  fn is_valid(&self, base: &GltfDocument) -> Result<(), String> {
     if let Some(node) = self.node { 
       check_items_for_min_val(&[node], 0, "animation.channel.target.node")?; 
       let ref_node: &Node = 
         match base.nodes.as_ref().unwrap().get(node)
         {
           Some(v) => v,
-          None => Err(GltfError::from(format!("`animation.channel.target.node` is not a valid node!")))?
+          None => Err(format!("`animation.channel.target.node` is not a valid node!"))?
         };
       if ref_node.matrix != default_matrix() {
-        Err(GltfError::from(format!("When a node is target for animation, `matrix` must not be present!")))?
+        Err(format!("When a node is target for animation, `matrix` must not be present!"))?
       }
     };
     Ok(())
@@ -935,7 +933,7 @@ pub struct AnimationChannel {
   pub extras: Option<Extra>,
 }
 impl Validatable for AnimationChannel {
-  fn is_valid(&self, base: &GltfDocument) -> anyhow::Result<()> {
+  fn is_valid(&self, base: &GltfDocument) -> Result<(), String> {
     check_items_for_min_val(&[self.sampler], 0, "animation.channel.sampler")?;
     self.target.is_valid(base)?;
     Ok(())
@@ -960,7 +958,7 @@ pub struct AnimationSampler {
   pub extras: Option<Extra>,
 }
 impl Validatable for AnimationSampler {
-  fn is_valid(&self, base: &GltfDocument) -> anyhow::Result<()> {
+  fn is_valid(&self, base: &GltfDocument) -> Result<(), String> {
     check_items_for_min_val(&[self.input], 0, "animation.sampler.input")?;
     check_items_for_min_val(&[self.output], 0, "animation.sampler.output")?;
     if let Some(accessors) = &base.accessors { 
@@ -968,10 +966,10 @@ impl Validatable for AnimationSampler {
         match accessors.get(self.input) 
         {
           Some(v) => v,
-          None => Err(GltfError::from(format!("`animation.sampler.input` must reference a valid accessor!")))?
+          None => Err(format!("`animation.sampler.input` must reference a valid accessor!"))?
         }; 
       if input_accessor.ty != AccessorType::Scalar || input_accessor.component_type != ComponentType::Float {
-        Err(GltfError::from(format!("The referenced accessor `animation.sampler.input` must be of scalar type with floating-point components!")))?
+        Err(format!("The referenced accessor `animation.sampler.input` must be of scalar type with floating-point components!"))?
       }
     }
     Ok(())
@@ -996,12 +994,12 @@ pub struct Orthographic {
   pub extras: Option<Extra>,
 }
 impl Validatable for Orthographic {
-  fn is_valid(&self, _base: &GltfDocument) -> anyhow::Result<()> {
-    if self.xmag == 0.0 { Err(GltfError::from(format!("`camera.orthographic.xmag` must not be equal to 0.0!")))? }
-    if self.ymag == 0.0 { Err(GltfError::from(format!("`camera.orthographic.ymag` must not be equal to 0.0!")))? }
-    if self.zfar <= 0.0 { Err(GltfError::from(format!("`camera.orthographic.zfar` must be greater than 0.0!")))? }
-    if self.zfar <= self.znear { Err(GltfError::from(format!("`camera.orthographic.zfar` must be greater than `camera.orthographic.znear`")))? }
-    if self.znear < 0.0 { Err(GltfError::from(format!("`camera.orthographic.znear` must be greater than or equal to 0.0!")))? }
+  fn is_valid(&self, _base: &GltfDocument) -> Result<(), String> {
+    if self.xmag == 0.0 { Err(format!("`camera.orthographic.xmag` must not be equal to 0.0!"))? }
+    if self.ymag == 0.0 { Err(format!("`camera.orthographic.ymag` must not be equal to 0.0!"))? }
+    if self.zfar <= 0.0 { Err(format!("`camera.orthographic.zfar` must be greater than 0.0!"))? }
+    if self.zfar <= self.znear { Err(format!("`camera.orthographic.zfar` must be greater than `camera.orthographic.znear`"))? }
+    if self.znear < 0.0 { Err(format!("`camera.orthographic.znear` must be greater than or equal to 0.0!"))? }
     Ok(())
   }
 }
@@ -1025,16 +1023,16 @@ pub struct Perspective {
   pub extras: Option<Extra>,
 }
 impl Validatable for Perspective {
-  fn is_valid(&self, _base: &GltfDocument) -> anyhow::Result<()> {
+  fn is_valid(&self, _base: &GltfDocument) -> Result<(), String> {
     if let Some(aspect_ratio) = self.aspect_ratio { 
-      if aspect_ratio <= 0.0 { Err(GltfError::from(format!("`camera.perspective.aspect_ratio` must be greater than 0.0!")))?}
+      if aspect_ratio <= 0.0 { Err(format!("`camera.perspective.aspect_ratio` must be greater than 0.0!"))?}
     }
-    if self.yfov == 0.0 { Err(GltfError::from(format!("`camera.perspective.yfov` must be equal to 0.0!")))?}
+    if self.yfov == 0.0 { Err(format!("`camera.perspective.yfov` must be equal to 0.0!"))?}
     if let Some(zfar) = self.zfar {
-      if zfar <= 0.0 { Err(GltfError::from(format!("`camera.perspective.zfar` must be greater than 0.0!")))? }
-      if zfar <= self.znear { Err(GltfError::from(format!("When defined, `camera.perspective.zfar` must be greater than `camera.perspective.znear`")))? }
+      if zfar <= 0.0 { Err(format!("`camera.perspective.zfar` must be greater than 0.0!"))? }
+      if zfar <= self.znear { Err(format!("When defined, `camera.perspective.zfar` must be greater than `camera.perspective.znear`"))? }
     }
-    if self.znear < 0.0 { Err(GltfError::from(format!("`camera.perspective.znear` must be greater than or equal to 0.0!")))? }
+    if self.znear < 0.0 { Err(format!("`camera.perspective.znear` must be greater than or equal to 0.0!"))? }
     Ok(())
   }
 }
@@ -1053,7 +1051,7 @@ pub struct TextureInfo {
   pub extras: Option<Extra>,
 }
 impl Validatable for TextureInfo {
-  fn is_valid(&self, _base: &GltfDocument) -> anyhow::Result<()> {
+  fn is_valid(&self, _base: &GltfDocument) -> Result<(), String> {
     check_items_for_min_val(&[self.index], 0, "textureInfo.index")?;
     check_items_for_min_val(&[self.tex_coord], 0, "textureInfo.texCoord")?;
     Ok(())
@@ -1091,7 +1089,7 @@ pub struct MaterialPbrMetallicRoughness {
   pub extras: Option<Extra>,
 }
 impl Validatable for MaterialPbrMetallicRoughness {
-  fn is_valid(&self, base: &GltfDocument) -> anyhow::Result<()> {
+  fn is_valid(&self, base: &GltfDocument) -> Result<(), String> {
     check_items_for_min_val(&self.base_color_factor, 0.0, "material.pbrMetallicRoughness.baseColorFactor")?;
     check_items_for_max_val(&self.base_color_factor, 1.0, "material.pbrMetallicRoughness.baseColorFactor")?;
     if let Some(base_color_tex_info) = &self.base_color_texture { base_color_tex_info.is_valid(base)? };
@@ -1122,7 +1120,7 @@ pub struct MaterialOcclusionTextureInfo {
   pub extras: Option<Extra>,
 }
 impl Validatable for MaterialOcclusionTextureInfo {
-  fn is_valid(&self, _base: &GltfDocument) -> anyhow::Result<()> {
+  fn is_valid(&self, _base: &GltfDocument) -> Result<(), String> {
     check_items_for_min_val(&[self.index], 0, "material.occlusionTextureInfo.index")?;
     check_items_for_min_val(&[self.tex_coord], 0, "material.occlusionTextureInfo.texCoord")?;
     check_items_for_min_val(&[self.strength], 0.0, "material.occlusionTextureInfo.strength")?;
@@ -1149,7 +1147,7 @@ pub struct MaterialNormalTextureInfo {
   pub extras: Option<Extra>,
 }
 impl Validatable for MaterialNormalTextureInfo {
-  fn is_valid(&self, _base: &GltfDocument) -> anyhow::Result<()> {
+  fn is_valid(&self, _base: &GltfDocument) -> Result<(), String> {
     check_items_for_min_val(&[self.index], 0, "material.normalTextureInfo.index")?;
     check_items_for_min_val(&[self.tex_coord], 0, "material.normalTextureInfo.texCoord")?;
     Ok(())
@@ -1182,19 +1180,19 @@ pub struct MeshPrimitive {
   pub extras: Option<Extra>,
 }
 impl Validatable for MeshPrimitive {
-  fn is_valid(&self, base: &GltfDocument) -> anyhow::Result<()> {
+  fn is_valid(&self, base: &GltfDocument) -> Result<(), String> {
     if let Some(indices) = self.indices { 
       check_items_for_min_val(&[indices], 0, "mesh.primitive.indices")?;
       let ref_accessor: &Accessor = 
         match base.accessors.as_ref().unwrap().get(indices)
         {
           Some(v) => v,
-          None => Err(GltfError::from(format!("`mesh.primitive.indices` is not a valid accessor!")))?
+          None => Err(format!("`mesh.primitive.indices` is not a valid accessor!"))?
         };
       if ref_accessor.ty != AccessorType::Scalar || 
         ![ComponentType::UnsignedByte, ComponentType::UnsignedShort, ComponentType::UnsignedInt].iter().any(|&component_type| component_type == ref_accessor.component_type) 
       {
-        Err(GltfError::from(format!("The referenced accessor `mesh.primitive.indices` must be a `SCALAR` and an unsigned integer component type!")))?
+        Err(format!("The referenced accessor `mesh.primitive.indices` must be a `SCALAR` and an unsigned integer component type!"))?
       }
     };
     if let Some(material) = self.material { check_items_for_min_val(&[material], 0, "mesh.primitive.material")? };
@@ -1214,7 +1212,7 @@ pub struct KhrMaterialsAnisotropy {
   anisotropy_texture: Option<TextureInfo>
 }
 impl Validatable for KhrMaterialsAnisotropy {
-  fn is_valid(&self, base: &GltfDocument) -> anyhow::Result<()> {
+  fn is_valid(&self, base: &GltfDocument) -> Result<(), String> {
       Ok(())
   }
 }
