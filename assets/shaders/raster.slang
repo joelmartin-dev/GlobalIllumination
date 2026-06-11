@@ -8,6 +8,7 @@ VSOutput vertMain(VSInput input) {
     output.fragColor = input.inColor;
     output.fragTexCoord = input.inTexCoord;
     output.fragNormal = input.inNormal;
+    output.fragTangent = input.inTangent;
     output.worldPos = mul(camera.model, float4(input.inPosition, 1.0)).xyz;
     return output;
 }
@@ -19,7 +20,7 @@ VSOutput vertMain(VSInput input) {
 //     output.pos = float4(input.inPosition, 1.0);
 //     output.fragColor = input.inColor;
 //     output.fragTexCoord = input.inTexCoord;
-//     output.fragNormal = input.inNormal;
+//     output.fragNormal d= input.inNormal;
 //     output.worldPos = input.inPosition;
 //     return output;
 // }
@@ -34,8 +35,9 @@ struct PushConstant {
 [shader("fragment")]
 float4 fragMain(VSOutput vertIn) : SV_TARGET {
     float4 textureColour = textures[pc.materialID].Sample(textureSampler, vertIn.fragTexCoord);
-    return textureColour * float4(vertIn.fragColor, 1.0);
-    // return float4(vertIn.fragTexCoord, 0.0f, 1.0f);
+    // return textureColour * float4(vertIn.fragColor, 1.0f);
+    return float4(vertIn.fragColor, 1.0f);
+    //return float4(vertIn.fragTangent);
 }
 
 [shader("compute")]

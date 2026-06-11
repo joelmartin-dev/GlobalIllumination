@@ -14,7 +14,7 @@ impl ApplicationHandler for App {
         .with_title("Beans Engine")
         .with_inner_size(PhysicalSize::new(options.resolution.0, options.resolution.1))
       ).unwrap();
-      self.engine = Some(Engine::new(&window, options));
+      self.engine = match Engine::new(&window, options) { Ok(v) => Some(v), Err(e) => { println!("{}", e); None }};
       self.window = Some(window);
   }
 
@@ -73,7 +73,7 @@ impl ApplicationHandler for App {
         },
         WindowEvent::RedrawRequested => {
           // println!("Redraw");
-          let delta_exp = 19;
+          let delta_exp = 18;
           let frame_start = Instant::now();
           engine.camera.update((engine.delta as f32) / ((2 << delta_exp) as f32));
           engine.draw_frame(window);
@@ -82,15 +82,36 @@ impl ApplicationHandler for App {
           // Lock to 60fps
           while frame_end.duration_since(frame_start).as_micros() < 16667 { frame_end = Instant::now() }
   
+          self.window.as_ref().unwrap().request_redraw();
+
           engine.delta = frame_end.duration_since(frame_start).as_micros();
           engine.runtime += engine.delta;
 
           let debug_ui_context = engine.debug_gui_context.as_mut().unwrap();
           debug_ui_context.delta = frame_end.duration_since(frame_start).as_micros();
+        },
+        WindowEvent::DroppedFile(path) => {
+          // println!("File dropped: {:?}", path);
+          let engine = self.engine.as_mut().unwrap();
+          let mut context = engine.context.as_mut().unwrap();
+          let mut vertices = engine.vertices.as_mut();
+          let mut indices = engine.indices.as_mut();
+          let mut submeshes = engine.submeshes.as_mut();
+          let materials = &mut engine.materials;
 
+          match Engine::load_gltf(&mut context, &mut vertices, &mut indices, &mut submeshes, &engine.vertex_data, materials, &engine.fallback_texture_data, &path, engine.gltf_replace_mode) {
+            Err(e) => println!("Received error: {}", e.to_string()),
+            Ok(vd) => {engine.vertex_data = vd; println!("Loaded: {:?}", path);}
+          };
           self.window.as_ref().unwrap().request_redraw();
+        },
+        WindowEvent::HoveredFile(path) => {
+          // println!("File hovered: {:?}", path);
+        },
+        WindowEvent::Focused(state) => {
+          // println!("Window is in {} mode!", match state { true => "focused", false => "unfocused" });
         }
-        _ => ()
+        _ => { }
       }
   }
   

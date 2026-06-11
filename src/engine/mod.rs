@@ -138,6 +138,7 @@ pub struct DebugGuiContext {
   // Data to change at runtime
   slang_path: String,
   spirv_path: String,
+  slang_content: String,
   delta: u128,
 }
 
@@ -148,9 +149,10 @@ pub struct VertexData {
   colour_buffer: (vk::Buffer, vk::DeviceMemory),
   uv_buffer: (vk::Buffer, vk::DeviceMemory),
   nrm_buffer: (vk::Buffer, vk::DeviceMemory),
+  tang_buffer: (vk::Buffer, vk::DeviceMemory)
 }
 
-#[derive(Default)]
+#[derive(Clone, Default)]
 pub struct ImageData {
   images: Vec<(vk::Image, vk::DeviceMemory)>,
   views: Vec<vk::ImageView>,
@@ -194,6 +196,9 @@ pub struct Engine {
   submeshes: Vec<SubMesh>,
   
   vertex_data: VertexData,  
+  gltf_replace_mode: bool,
+
+  materials: ImageData,
   
   // create_indirect_commands
   // indirect_commands: Vec<vk::DrawIndexedIndirectCommand>,

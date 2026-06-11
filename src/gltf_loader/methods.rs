@@ -1,13 +1,14 @@
-use std::{any::{Any, type_name}, fs, path::PathBuf};
+use std::{any::type_name, fs, path::PathBuf, str::FromStr};
 
-use pct_str::{Encoder, PctString, UriReserved};
-use serde::{Deserialize, Deserializer, Serialize, Serializer, de::Error};
+use iri_string::{percent_encode::PercentEncoded, spec::IriSpec, types::IriReferenceStr};
+use serde::{Deserialize, Deserializer, Serializer, de::Error};
+use base64::{engine::general_purpose::STANDARD, Engine as _};
 
-use crate::gltf_loader::{GltfLoader, Validatable, enums::{MeshPrimitiveMode, Undefinable}};
+use crate::gltf_loader::{GltfDocument, Validatable, enums::{MeshPrimitiveMode, Undefinable}};
 
-impl GltfLoader {
-  pub fn load(path: &PathBuf) -> Result<Self, String> {
-    let parsed: Result<GltfLoader, serde_json::Error> = serde_json::from_str(&fs::read_to_string(path).unwrap());
+impl GltfDocument {
+  pub fn load(path: &PathBuf) -> Result<(Self, Vec<Vec<u8>>), String> {
+    let parsed: Result<GltfDocument, serde_json::Error> = serde_json::from_str(match &fs::read_to_string(path) { Ok(v) => v, Err(e) => Err(e.to_string())?});
 
     if let Ok(loaded) = parsed {
       loaded.is_valid(&loaded)?;
@@ -22,7 +23,7 @@ impl GltfLoader {
       
       if let Some(buffers)      = &loaded.buffers       
         { buffers     .iter().try_for_each(|buffer|       buffer      .is_valid(&loaded))? };
-      
+
       if let Some(buffer_views) = &loaded.buffer_views  
         { buffer_views.iter().try_for_each(|buffer_view|  buffer_view .is_valid(&loaded))? };
       
@@ -53,7 +54,50 @@ impl GltfLoader {
       if let Some(textures)     = &loaded.textures      
         { textures    .iter().try_for_each(|texture|      texture     .is_valid(&loaded))? };
       
-      Ok(loaded)
+      let mut loaded_buffers: Vec<Vec<u8>> = Vec::new();
+      let parent_path = match path.parent() { Some(v) => v, None => Err(&"failed to get parent path!".to_string())? };
+      if let Some(buffers)      = &loaded.buffers
+        {
+          let _ = buffers.iter().try_for_each(|buffer| -> Result<(), String>
+            { 
+              if let Some(uri) = &buffer.uri {
+                const VALID_URI_MIME_TYPES: &[&str] = &[
+                  "application/octet-stream", "application/gltf-buffer"
+                ];
+                let encoded_iri = match IriReferenceStr::new(uri) { Ok(v) => v, Err(e) => Err(e.to_string())?};
+                if encoded_iri.scheme_str() != Some("data") { 
+                  let decoded_uri = iri_string::percent_encode::decode::decode_whatwg_bytes(uri.as_bytes());
+                  match fs::read(parent_path.join(match decoded_uri.into_string() { Ok(v) => v, Err(e) => Err(e.to_string())?})) {
+                    Ok(bytes_vec) => loaded_buffers.push(bytes_vec.clone()),
+                    Err(e) => Err(e.to_string())?
+                  }
+                }
+                let body = match encoded_iri.as_str().strip_prefix("data:") {
+                  Some(v) => v, None => Err("Invalid embedded buffer!".to_string())?
+                };
+                let mut segments = body.split(|c| c == ';' || c == ',');
+                
+                let mime_type = (match segments.next() {
+                  Some(v) => v, None => Err("Failed to get mime type from uri!".to_string())?
+                }).trim();
+                println!("{}", mime_type);
+                if !VALID_URI_MIME_TYPES.contains(&mime_type) { Err("Uri contained invalid mime type!".to_string())? };
+                let rest = segments.next();
+                if rest == Some("base64") {
+                  let data = match segments.last() {
+                    Some(enc_v) => match STANDARD.decode(enc_v) {
+                      Ok(v) => v, Err(e) => Err(e.to_string())?
+                    },
+                    None => Err("No data found in uri!".to_string())?
+                  };
+                  loaded_buffers.push(data);
+                }
+              }
+              Ok(())
+            });
+        };
+
+      Ok((loaded, loaded_buffers))
     }
     else {
       Err(parsed.unwrap_err().to_string())
@@ -62,10 +106,10 @@ impl GltfLoader {
 }
 
 // #region Deserializers
-pub fn deserialize_from_i32_to_enum<'de, D, T>(deserializer: D) -> Result<T, D::Error>
-where D: Deserializer<'de>, T: From<i32> + Undefinable
+pub fn deserialize_from_usize_to_enum<'de, D, T>(deserializer: D) -> Result<T, D::Error>
+where D: Deserializer<'de>, T: From<usize> + Undefinable
 {
-  let val = i32::deserialize(deserializer)?;
+  let val = usize::deserialize(deserializer)?;
   match val {
     n if T::from(n).is_undefined() => {
       let type_name = type_name::<T>().split("::").last().unwrap_or("unknown");
@@ -75,10 +119,10 @@ where D: Deserializer<'de>, T: From<i32> + Undefinable
   }
 }
 
-pub fn deserialize_from_option_i32_to_enum<'de, D, T>(deserializer: D) -> Result<Option<T>, D::Error>
-where D: Deserializer<'de>, T: From<i32> + Undefinable
+pub fn deserialize_from_option_usize_to_enum<'de, D, T>(deserializer: D) -> Result<Option<T>, D::Error>
+where D: Deserializer<'de>, T: From<usize> + Undefinable
 {
-  let val = Option::<i32>::deserialize(deserializer)?;
+  let val = Option::<usize>::deserialize(deserializer)?;
   match val {
     Some(n) if T::from(n).is_undefined() => {
       let type_name = type_name::<T>().split("::").last().unwrap_or("unknown");
@@ -119,24 +163,27 @@ where D: Deserializer<'de>
 {
   let val = Option::<String>::deserialize(deserializer)?;
   match val {
-    Some(v) => { let encoded_val = PctString::encode(v.chars(), UriReserved::Path); Ok(Some(encoded_val.to_string()))},
+    Some(raw_uri) => match IriReferenceStr::new(&raw_uri) {
+      Ok(_) => Ok(Some(raw_uri)),
+      Err(_) => Ok(Some(PercentEncoded::<_, IriSpec>::from_path(raw_uri).to_string()))
+    },
     None => Ok(None)
   }
 }
 // #endregion
 
 // #region Serializers
-pub fn serialize_to_i32<S, T>(val: &T, serializer: S) -> Result<S::Ok, S::Error>
-where S: Serializer, T: Into<i32> + Copy
+pub fn serialize_to_u64<S, T>(val: &T, serializer: S) -> Result<S::Ok, S::Error>
+where S: Serializer, T: Into<u64> + Copy
 {
-  serializer.serialize_i32((*val).into())
+  serializer.serialize_u64((*val).into())
 }
 
-pub fn serialize_option_to_i32<S, T>(val: &Option<T>, serializer: S) -> Result<S::Ok, S::Error>
-where S: Serializer, T: Into<i32> + Copy
+pub fn serialize_option_to_u64<S, T>(val: &Option<T>, serializer: S) -> Result<S::Ok, S::Error>
+where S: Serializer, T: Into<u64> + Copy
 {
   match val {
-    Some(v) => serializer.serialize_i32((*v).into()),
+    Some(v) => serializer.serialize_u64((*v).into()),
     _ => serializer.serialize_none()
   }
 }
@@ -162,11 +209,14 @@ pub fn default_base_color_factor() -> [f32; 4] { [1.0, 1.0, 1.0, 1.0] }
 pub fn default_emissive_factor() -> [f32; 3] { [0.0, 0.0, 0.0] }
 pub fn default_f32_1() -> f32 { 1.0 }
 pub fn default_f32_half() -> f32 { 0.5 }
+pub fn default_f32_0() -> f32 { 0.0 }
 pub fn default_matrix() -> [f32; 16] { [ 1.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 1.0 ] }
 pub fn default_mesh_primitive_mode() -> MeshPrimitiveMode { MeshPrimitiveMode::from(4) }
 pub fn default_rotation() -> [f32; 4] { [ 0.0, 0.0, 0.0, 1.0] }
 pub fn default_scale() -> [f32; 3] { [1.0, 1.0, 1.0] }
 pub fn default_translation() -> [f32; 3] { [0.0, 0.0, 0.0] }
+
+// Extensions
 // #endregion
 
 

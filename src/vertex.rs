@@ -10,6 +10,7 @@ pub struct Vertex {
   pub tex_coord: glm::Vec2,
   pub colour: glm::Vec3,
   pub norm: glm::Vec3,
+  pub tang: glm::Vec4
 }
 
 impl Vertex {
@@ -24,7 +25,7 @@ impl Vertex {
   }
 
   // How the struct's data is laid out
-  pub fn get_attribute_descriptions() -> [vk::VertexInputAttributeDescription; 4]
+  pub fn get_attribute_descriptions() -> [vk::VertexInputAttributeDescription; 5]
   {
     return [
       // location, binding, format, offset
@@ -53,6 +54,12 @@ impl Vertex {
         binding: 0,
         format: vk::Format::R32G32B32_SFLOAT,
         offset: offset_of!(Self, norm) as u32
+      },
+      vk::VertexInputAttributeDescription {
+        location: 4,
+        binding: 0,
+        format: vk::Format::R32G32B32A32_SFLOAT,
+        offset: offset_of!(Self, tang) as u32
       }
     ];
   }
