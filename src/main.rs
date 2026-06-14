@@ -1,4 +1,3 @@
-mod engine;
 mod camera;
 mod vertex;
 mod model;
@@ -7,7 +6,6 @@ mod app_options;
 mod gltf_loader;
 
 use winit::{event_loop::{ControlFlow, EventLoop}, keyboard::ModifiersState};
-use crate::{engine::App};
 
 // Arch Linux: unset envvar WAYLAND_DISPLAY to force x11
 fn main()
