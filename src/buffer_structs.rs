@@ -7,24 +7,14 @@ use nalgebra_glm as glm;
 pub struct MVP {
   pub model: glm::Mat4,
   pub view: glm::Mat4,
-  pub inv_view: glm::Mat4,
   pub proj: glm::Mat4,
+  pub inv_view: glm::Mat4,
   pub inv_proj: glm::Mat4
 }
 
-// #[repr(C)]
-// #[derive(Clone, Copy)]
-// pub struct CubeTransforms {
-//   pub model: glm::Mat4,
-//   pub view: glm::Mat4,
-//   pub inv_view: glm::Mat4,
-//   pub proj: glm::Mat4,
-//   pub inv_proj: glm::Mat4
-// }
-
 #[repr(C)]
 #[derive(Clone, Copy)]
-pub struct RasterPushConstant {
+pub struct PushConstant {
   pub material_index: u32,
 }
 
