@@ -1,4 +1,7 @@
-use winit::{application::ApplicationHandler, event::WindowEvent, event_loop::ActiveEventLoop, keyboard::ModifiersState, platform::windows::WindowAttributesExtWindows, window::{Window, WindowId}};
+use winit::{application::ApplicationHandler, event::WindowEvent, event_loop::ActiveEventLoop, keyboard::ModifiersState, window::{Window, WindowId}};
+
+#[cfg(target_os = "windows")]
+use winit::platform::windows::WindowAttributesExtWindows;
 
 use crate::renderer::Renderer;
 
@@ -14,17 +17,26 @@ impl ApplicationHandler for App {
     fn resumed(&mut self, event_loop: &ActiveEventLoop) 
     {
       self.window = Some(event_loop.create_window(Window::default_attributes().with_title("Beans Engine")).expect("failed to create winit window!"));
-      self.renderer = Some(Renderer::new(self.window.as_ref().unwrap()));
+      self.renderer = match Renderer::new(self.window.as_ref().unwrap()) {
+        Ok(v) => Some(v),
+        Err(e) => { println!("{}", e); None }
+      };
     }
 
     fn window_event(&mut self, event_loop: &ActiveEventLoop, window_id: WindowId, event: WindowEvent) 
     {
+      let renderer = self.renderer.as_mut().unwrap();
+      let window = self.window.as_ref().unwrap();
+
       match event {
         WindowEvent::CloseRequested => {
           event_loop.exit();
         },
         WindowEvent::RedrawRequested => {
-
+          match renderer.present_frame() {
+            Err(e) => println!("{}", e),
+            _ => ()
+          };
 
           if let Some(window) = self.window.as_ref() { window.request_redraw(); }
         },

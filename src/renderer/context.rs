@@ -20,6 +20,13 @@ pub struct VulkanContext {
   pub allocator:          vk_mem::Allocator,
 }
 
+impl Drop for VulkanContext
+{
+  fn drop(&mut self) {
+      unsafe { self.device.device_wait_idle() };
+  }
+}
+
 unsafe extern "system" fn debug_callback(
   msg_severity: vk::DebugUtilsMessageSeverityFlagsEXT, 
   _msg_type: vk::DebugUtilsMessageTypeFlagsEXT, 
@@ -211,7 +218,7 @@ impl VulkanContext
       );
 
       let supports_graphics = queue_families.iter().any(|&qfp| 
-        qfp.queue_flags.contains(vk::QueueFlags::GRAPHICS));
+        qfp.queue_flags.contains(vk::QueueFlags::GRAPHICS | vk::QueueFlags::TRANSFER));
       let supports_compute = queue_families.iter().any(|&qfp| 
         qfp.queue_flags.contains(vk::QueueFlags::COMPUTE | vk::QueueFlags::TRANSFER));
 
@@ -262,7 +269,7 @@ impl VulkanContext
       )
       .expect("failed to find present-capable queue family, despite one existing!");
 
-    let graphics_qfi = qfp.iter().position(|&qfp| qfp.queue_flags.contains(vk::QueueFlags::GRAPHICS))
+    let graphics_qfi = qfp.iter().position(|&qfp| qfp.queue_flags.contains(vk::QueueFlags::GRAPHICS | vk::QueueFlags::TRANSFER))
       .expect("failed to find graphics-capable queue family, despite one existing!");
 
     // Prefer a separate queue for compute
@@ -399,5 +406,43 @@ impl VulkanContext
       let properties = unsafe { instance.get_physical_device_format_properties(physical_device, *fmt)};
       properties.optimal_tiling_features.contains(vk::FormatFeatureFlags::DEPTH_STENCIL_ATTACHMENT)
     }).expect("failed to find supported format!")
+  }
+
+  pub fn begin_single_time_commands(device: &Device, command_pool: vk::CommandPool) -> Result<vk::CommandBuffer, String>
+  {
+    // Same allocInfo as computeCommandBuffers and drawCommandBuffers
+    let alloc_info = vk::CommandBufferAllocateInfo::default()
+      .command_pool(command_pool)
+      .level(vk::CommandBufferLevel::PRIMARY)
+      .command_buffer_count(1);
+
+    // We only need one command buffer but there is no suitable constructor for a single buffer, so grab the first
+    let command_buffer = unsafe { device.allocate_command_buffers(&alloc_info) }
+      .map_err(|_| "failed to allocate command buffers!")?[0];
+
+    // Start recording the command buffer (with the understanding that it will only been used once)
+    let begin_info = vk::CommandBufferBeginInfo::default().flags(vk::CommandBufferUsageFlags::ONE_TIME_SUBMIT);
+
+    unsafe { device.begin_command_buffer(command_buffer, &begin_info) }.map_err(|_| "failed to being command buffer!")?;
+
+    Ok(command_buffer)
+  }
+
+  pub fn end_single_time_commands(device: &Device, queue: vk::Queue, command_buffer: vk::CommandBuffer) -> Result<(), String>
+  {
+    let command_buffers = [command_buffer];
+    // Stop recording
+    unsafe { device.end_command_buffer(command_buffer) }.map_err(|_| "failed to end command buffer!")?;
+
+    // Submit to queue
+    let submit_info = vk::SubmitInfo::default().command_buffers(&command_buffers);
+
+    unsafe { device.queue_submit(queue, &[submit_info], vk::Fence::null()) }
+      .map_err(|_| "failed to submit single time commands to queue!")?;
+
+    // Wait until submission completed
+    unsafe { device.queue_wait_idle(queue) }.map_err(|_| "failed to wait for queue idle!")?;
+
+    Ok(())
   }
 }
