@@ -1,4 +1,4 @@
-use winit::{application::ApplicationHandler, event::WindowEvent, event_loop::ActiveEventLoop, keyboard::ModifiersState, window::{Window, WindowId}};
+use winit::{application::ApplicationHandler, event::WindowEvent, event_loop::ActiveEventLoop, keyboard::ModifiersState, platform::windows::WindowAttributesExtWindows, window::{Window, WindowId}};
 
 use crate::renderer::Renderer;
 
@@ -13,7 +13,7 @@ pub struct App {
 impl ApplicationHandler for App {
     fn resumed(&mut self, event_loop: &ActiveEventLoop) 
     {
-      self.window = Some(event_loop.create_window(Window::default_attributes()).expect("failed to create winit window!"));
+      self.window = Some(event_loop.create_window(Window::default_attributes().with_title("Beans Engine")).expect("failed to create winit window!"));
       self.renderer = Some(Renderer::new(self.window.as_ref().unwrap()));
     }
 

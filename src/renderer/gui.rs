@@ -21,7 +21,8 @@ impl GuiContext
     platform.attach_window(imgui.io_mut(), window, HiDpiMode::Default);
 
     let dynamic_rendering = DynamicRendering {
-      color_attachment_format: context.get_surface_format(), depth_attachment_format: Some(context.find_depth_format())
+      color_attachment_format: VulkanContext::get_surface_format(&context.surface, context.surface_khr, context.physical_device).format, 
+      depth_attachment_format: Some(VulkanContext::get_depth_format(&context.instance, context.physical_device))
     };
     let renderer = Renderer::with_default_allocator(
       &context.instance, context.physical_device, context.device.clone(), 

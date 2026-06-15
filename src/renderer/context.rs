@@ -6,7 +6,7 @@ use winit::{raw_window_handle::{HasDisplayHandle, HasWindowHandle}, window::Wind
 
 
 pub struct VulkanContext {
-  entry:              Entry,
+  entry:                  Entry,
   pub instance:           Instance,
   pub surface:            surface::Instance,
   pub surface_khr:        vk::SurfaceKHR,
@@ -17,6 +17,7 @@ pub struct VulkanContext {
   pub presentation_queue: (vk::Queue, vk::CommandPool),
   pub graphics_queue:     (vk::Queue, vk::CommandPool),
   pub compute_queue:      (vk::Queue, vk::CommandPool),
+  pub allocator:          vk_mem::Allocator,
 }
 
 unsafe extern "system" fn debug_callback(
@@ -106,6 +107,9 @@ impl VulkanContext
         .expect("failed to create command pool!") 
       };
 
+    let alloc_create_info = vk_mem::AllocatorCreateInfo::new(&instance, &device, physical_device);
+    let allocator = unsafe { vk_mem::Allocator::new(alloc_create_info) }.expect("failed to create vk_mem allocator!");
+
     Self { 
       entry,
       instance, 
@@ -117,7 +121,8 @@ impl VulkanContext
       swapchain_khr,
       presentation_queue: (presentation_queue, presentation_command_pool),
       graphics_queue: (graphics_queue, graphics_command_pool),
-      compute_queue: (compute_queue, compute_command_pool)
+      compute_queue: (compute_queue, compute_command_pool),
+      allocator,
     }
   }
 
@@ -208,7 +213,7 @@ impl VulkanContext
       let supports_graphics = queue_families.iter().any(|&qfp| 
         qfp.queue_flags.contains(vk::QueueFlags::GRAPHICS));
       let supports_compute = queue_families.iter().any(|&qfp| 
-        qfp.queue_flags.contains(vk::QueueFlags::COMPUTE));
+        qfp.queue_flags.contains(vk::QueueFlags::COMPUTE | vk::QueueFlags::TRANSFER));
 
       let available_device_extensions = unsafe { 
         instance.enumerate_device_extension_properties(*device)
@@ -262,10 +267,10 @@ impl VulkanContext
 
     // Prefer a separate queue for compute
     let compute_qfi = match qfp.iter().enumerate().position(|(idx, &qfp)| 
-      qfp.queue_flags.contains(vk::QueueFlags::COMPUTE) && idx != graphics_qfi)
+      qfp.queue_flags.contains(vk::QueueFlags::COMPUTE | vk::QueueFlags::TRANSFER) && idx != graphics_qfi)
     {
       Some(qfi) => qfi,
-      None => qfp.iter().position(|&qfp| qfp.queue_flags.contains(vk::QueueFlags::COMPUTE))
+      None => qfp.iter().position(|&qfp| qfp.queue_flags.contains(vk::QueueFlags::COMPUTE | vk::QueueFlags::TRANSFER))
         .expect("failed to find compute-capable queue family, despite one existing!")
     };
 
@@ -330,7 +335,7 @@ impl VulkanContext
     }
   }
 
-  fn get_swapchain_surface_format(surface: &surface::Instance, surface_khr: vk::SurfaceKHR, physical_device: vk::PhysicalDevice) -> vk::SurfaceFormatKHR
+  pub fn get_surface_format(surface: &surface::Instance, surface_khr: vk::SurfaceKHR, physical_device: vk::PhysicalDevice) -> vk::SurfaceFormatKHR
   {
     let available_surface_formats = unsafe { 
       surface.get_physical_device_surface_formats(physical_device, surface_khr)
@@ -350,7 +355,7 @@ impl VulkanContext
   {
     let swapchain_present_mode = Self::get_swapchain_present_mode(surface, surface_khr, physical_device);
 
-    let swapchain_surface_format = Self::get_swapchain_surface_format(surface, surface_khr, physical_device);
+    let swapchain_surface_format = Self::get_surface_format(surface, surface_khr, physical_device);
 
     let capabilities = unsafe {
       surface.get_physical_device_surface_capabilities(physical_device, surface_khr)
@@ -386,18 +391,13 @@ impl VulkanContext
     unsafe { swapchain.create_swapchain(&swapchain_create_info, None) }.expect("failed to create swapchain!")
   }
 
-  pub fn find_depth_format(&self) -> vk::Format
+  pub fn get_depth_format(instance: &Instance, physical_device: vk::PhysicalDevice) -> vk::Format
   {
     let candidates = [vk::Format::D32_SFLOAT, vk::Format::D32_SFLOAT_S8_UINT, vk::Format::D24_UNORM_S8_UINT];
 
     *candidates.iter().find(|&fmt| {
-      let properties = unsafe { self.instance.get_physical_device_format_properties(self.physical_device, *fmt)};
+      let properties = unsafe { instance.get_physical_device_format_properties(physical_device, *fmt)};
       properties.optimal_tiling_features.contains(vk::FormatFeatureFlags::DEPTH_STENCIL_ATTACHMENT)
     }).expect("failed to find supported format!")
-  }
-
-  pub fn get_surface_format(&self) -> vk::Format
-  {
-    Self::get_swapchain_surface_format(&self.surface, self.surface_khr, self.physical_device).format
   }
 }
