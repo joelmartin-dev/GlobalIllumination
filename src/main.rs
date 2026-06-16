@@ -1,5 +1,6 @@
 mod application;
 mod renderer;
+mod camera;
 
 use winit::{event_loop::{ControlFlow, EventLoop}};
 

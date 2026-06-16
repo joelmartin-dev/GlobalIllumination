@@ -34,7 +34,7 @@ struct PushConstant {
 // Sample the StorageImage using fullscreen triangle
 [shader("fragment")]
 float4 fragMain(VSOutput vertIn) : SV_TARGET {
-    float4 textureColour = textures[pc.materialID].Sample(textureSampler, vertIn.fragTexCoord);
+    float4 textureColour = fallback.Sample(vertIn.fragTexCoord);
     // return textureColour * float4(vertIn.fragColor, 1.0f);
     return float4(vertIn.fragColor, 1.0f);
     //return float4(vertIn.fragTangent);

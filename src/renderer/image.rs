@@ -4,7 +4,7 @@ use ash::{util::Align, vk, Device};
 use image::{EncodableLayout, ImageReader};
 use vk_mem::Alloc;
 
-use crate::renderer::{Renderer};
+use crate::renderer::Renderer;
 
 impl Renderer
 {
@@ -27,7 +27,8 @@ impl Renderer
         Ok(view)       
     }
 
-    pub fn create_image_from_png(image_path: &Path, allocator: &vk_mem::Allocator, device: &Device, command_buffer: vk::CommandBuffer) -> Result<(vk::Image, vk_mem::Allocation, vk::Buffer, vk_mem::Allocation, vk::Format, u32), String>
+    pub fn create_image_from_png(image_path: &Path, allocator: &vk_mem::Allocator, device: &Device, command_buffer: vk::CommandBuffer) 
+        -> Result<(vk::Image, vk_mem::Allocation, vk::Buffer, vk_mem::Allocation, vk::Format, u32), String>
     {
         let texture = ImageReader::open(image_path).map_err(|e| e.to_string())?.decode().map_err(|e| e.to_string())?;
 
@@ -51,7 +52,7 @@ impl Renderer
                 Ok(v) => v,
                 Err(e) => { allocator.destroy_buffer(staging_buffer, &mut staging_buffer_memory); Err("failed to map buffer memory!")? }
             };
-            let mut align = Align::new(data as *mut c_void, size_of::<u8>() as u64, raw_texture_size);
+            let mut align = Align::new(data as *mut c_void, align_of::<u8>() as u64, raw_texture_size);
             align.copy_from_slice(&raw_texture);
             allocator.unmap_memory(&mut staging_buffer_memory);
         }

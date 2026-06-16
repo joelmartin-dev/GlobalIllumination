@@ -1,7 +1,7 @@
 use std::{ffi::CString, fs::File, io::Write, path::Path};
 use shader_slang::Downcast;
 
-struct SlangCompiler
+pub struct SlangCompiler
 {
   global_session: shader_slang::GlobalSession
 }

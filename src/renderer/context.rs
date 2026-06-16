@@ -3,8 +3,6 @@ use std::{ffi::{CStr, c_void}};
 use ash::{Device, Entry, Instance, ext::debug_utils, khr::{surface, swapchain}, prelude::VkResult, vk};
 use winit::{raw_window_handle::{HasDisplayHandle, HasWindowHandle}, window::Window};
 
-
-
 pub struct VulkanContext {
   entry:                  Entry,
   pub instance:           Instance,
@@ -14,17 +12,17 @@ pub struct VulkanContext {
   pub device:             Device,
   pub swapchain:          swapchain::Device,
   pub swapchain_khr:      vk::SwapchainKHR,
+  pub swapchain_extent:   vk::Extent2D,
   pub presentation_queue: (vk::Queue, vk::CommandPool),
   pub graphics_queue:     (vk::Queue, vk::CommandPool),
   pub compute_queue:      (vk::Queue, vk::CommandPool),
   pub allocator:          vk_mem::Allocator,
-}
+  }
 
 impl Drop for VulkanContext
 {
-  fn drop(&mut self) {
-      unsafe { self.device.device_wait_idle() };
-  }
+    fn drop(&mut self) {
+    }
 }
 
 unsafe extern "system" fn debug_callback(
@@ -88,7 +86,7 @@ impl VulkanContext
 
     let swapchain = swapchain::Device::new(&instance, &device);
 
-    let swapchain_khr = Self::create_swapchain(window, &surface, surface_khr, physical_device, &swapchain);
+    let (swapchain_khr, swapchain_extent) = Self::create_swapchain(window, &surface, surface_khr, physical_device, &swapchain);
 
     let presentation_command_pool_create_info = vk::CommandPoolCreateInfo::default().queue_family_index(qfis[0]);
 
@@ -126,6 +124,7 @@ impl VulkanContext
       device, 
       swapchain, 
       swapchain_khr,
+      swapchain_extent,
       presentation_queue: (presentation_queue, presentation_command_pool),
       graphics_queue: (graphics_queue, graphics_command_pool),
       compute_queue: (compute_queue, compute_command_pool),
@@ -358,7 +357,7 @@ impl VulkanContext
   fn create_swapchain(
     window: &Window, surface: &surface::Instance, surface_khr: vk::SurfaceKHR, 
     physical_device: vk::PhysicalDevice, swapchain: &swapchain::Device
-  ) -> vk::SwapchainKHR
+  ) -> (vk::SwapchainKHR, vk::Extent2D)
   {
     let swapchain_present_mode = Self::get_swapchain_present_mode(surface, surface_khr, physical_device);
 
@@ -395,7 +394,7 @@ impl VulkanContext
       .present_mode(swapchain_present_mode)
       .clipped(true);
 
-    unsafe { swapchain.create_swapchain(&swapchain_create_info, None) }.expect("failed to create swapchain!")
+    (unsafe { swapchain.create_swapchain(&swapchain_create_info, None) }.expect("failed to create swapchain!"), swapchain_extent)
   }
 
   pub fn get_depth_format(instance: &Instance, physical_device: vk::PhysicalDevice) -> vk::Format

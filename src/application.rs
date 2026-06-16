@@ -1,4 +1,4 @@
-use winit::{application::ApplicationHandler, event::WindowEvent, event_loop::ActiveEventLoop, keyboard::ModifiersState, window::{Window, WindowId}};
+use winit::{application::ApplicationHandler, event::WindowEvent, event_loop::ActiveEventLoop, keyboard::{KeyCode, ModifiersState, PhysicalKey}, window::{Window, WindowId}};
 
 #[cfg(target_os = "windows")]
 use winit::platform::windows::WindowAttributesExtWindows;
@@ -40,6 +40,12 @@ impl ApplicationHandler for App {
 
           if let Some(window) = self.window.as_ref() { window.request_redraw(); }
         },
+        WindowEvent::KeyboardInput { device_id, event, is_synthetic } => {
+          match &event.physical_key {
+            PhysicalKey::Code(KeyCode::Escape) => event_loop.exit(),
+            _ => ()
+          }
+        }
         _ => ()
       }
     }

@@ -29,34 +29,4 @@ public struct CameraTransforms {
 };
 [[vk::binding(0, 0)]] public ConstantBuffer<CameraTransforms> camera;
 
-// the indices of the scene
-[[vk::binding(1, 0)]] public StructuredBuffer<uint> indexBuffer;
-
-// the vertex colours of the scene
-[[vk::binding(2, 0)]] public StructuredBuffer<float3> colourBuffer;
-
-// the uvs of each vertex in the scene
-[[vk::binding(3, 0)]] public StructuredBuffer<float2> uvBuffer;
-
-// the normals of each vertex in the scene
-[[vk::binding(4, 0)]] public StructuredBuffer<float4> nrmBuffer;
-
-// the normals of each vertex in the scene
-[[vk::binding(5, 0)]] public StructuredBuffer<float4> tangBuffer;
-
-// Sampler of the written-to image
-[[vk::binding(6, 0)]] public SamplerState sampler;
-
-// Write access to StorageImages
-[vk_image_format("rgba32f")]
-[[vk::binding(8, 0)]] public RWTexture2D<float4> outImage[];
-
-// Sample access to StorageImages
-[vk_image_format("rgba32f")]
-[[vk::binding(9, 0)]] public Texture2D<float4> renderTextures[];
-
-// Sampler for texture array
-[[vk::binding(0, 1)]] public SamplerState textureSampler;
-
-// the array of the scene's textures (texture atlas)
-[[vk::binding(1, 1)]] public Texture2D<float4> textures[];
+[[vk::binding(1, 0)]] public Sampler2D fallback;
