@@ -85,7 +85,15 @@ impl ApplicationHandler for App {
               }
             }
           }
-        }
+        },
+        WindowEvent::DroppedFile(path) => {
+          // println!("File dropped: {:?}", path);
+          match renderer.load_gltf_from_path(&path)
+          {
+            Err(e) => println!("{}", e),
+            _ => ()
+          };
+        },
         _ => ()
       }
     }

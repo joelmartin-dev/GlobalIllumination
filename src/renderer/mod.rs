@@ -1,8 +1,8 @@
-use std::{ffi::c_void, fmt::Debug, fs, path::Path};
+use std::{ffi::c_void, fmt::Debug, fs, path::Path, ptr::null};
 
 use vk_mem::Alloc;
 use winit::window::Window;
-use ash::{Device, Instance, util::Align, vk};
+use ash::{Device, Instance, util::Align, vk::{self, Handle}};
 
 use crate::{camera::{Camera, WORLD_FORWARD, WORLD_RIGHT, WORLD_UP}, renderer::{buffer_structs::MVP, context::VulkanContext, slang::SlangCompiler, vertex::{TRIANGLE_INDICES, TRIANGLE_VERTICES, Vertex}}};
 use nalgebra_glm as glm;
@@ -99,21 +99,6 @@ impl Renderer
             temp_buffers.push((staging_buffer, staging_buffer_memory));
             (image, image_memory, view)
         };
-        let (vertices, vertex_buffer, vertex_buffer_memory, indices, index_buffer, index_buffer_memory) = {
-            let (
-                (vertex_buffer, vertex_buffer_memory, vertex_staging_buffer, vertex_staging_buffer_memory),
-                vertices,
-                (index_buffer, index_buffer_memory, index_staging_buffer, index_staging_buffer_memory),
-                indices
-            ) = Self::load_gltf(
-                &context.device, single_time_command_buffer, context.graphics_queue.0, &context.allocator, 
-                &Path::new(
-                    "INSERT PATH HERE")
-            )?;
-            temp_buffers.push((vertex_staging_buffer, vertex_staging_buffer_memory));
-            temp_buffers.push((index_staging_buffer, index_staging_buffer_memory));
-            (vertices, vertex_buffer, vertex_buffer_memory, indices, index_buffer, index_buffer_memory)
-        };
         VulkanContext::end_single_time_commands(&context.device, context.graphics_queue.0, single_time_command_buffer)?;
 
         temp_buffers.iter().for_each(|&(buffer, mut memory)| unsafe { context.allocator.destroy_buffer(buffer, &mut memory) });
@@ -137,6 +122,13 @@ impl Renderer
 
         let descriptor_sets = Self::create_descriptor_sets(&context.device, descriptor_pool, descriptor_set_layout, camera_buffers.as_slice(), fallback_image_view, fallback_sampler)?;
 
+        let alloc_info = vk_mem::AllocationCreateInfo {
+            usage: vk_mem::MemoryUsage::Auto, ..Default::default()
+        };
+        let buffer_info = vk::BufferCreateInfo::default().size(1).usage(vk::BufferUsageFlags::INDEX_BUFFER);
+        let temp_alloc_0 = unsafe { context.allocator.create_buffer(&buffer_info, &alloc_info)}.map_err(|e| e.to_string())?;
+        let temp_alloc_1 = unsafe { context.allocator.create_buffer(&buffer_info, &alloc_info)}.map_err(|e| e.to_string())?;
+
         Ok(Self {
             context,
             slang_compiler,
@@ -159,12 +151,12 @@ impl Renderer
             graphics_pipeline,
             descriptor_pool,
             descriptor_sets,
-            vertices,
-            vertex_buffer,
-            vertex_buffer_memory,
-            indices,
-            index_buffer,
-            index_buffer_memory,
+            vertices: Vec::new(),
+            vertex_buffer: temp_alloc_0.0,
+            vertex_buffer_memory: temp_alloc_0.1,
+            indices: Vec::new(),
+            index_buffer: temp_alloc_1.0,
+            index_buffer_memory: temp_alloc_1.1,
             camera_velocity: glm::zero(),
             camera_look: glm::zero(),
             delta_fov: 0.0,
@@ -175,8 +167,56 @@ impl Renderer
         })
     }
 
+    pub fn load_gltf_from_path(&mut self, path: &Path) -> Result<(), String>
+    {
+        let device = &self.context.device;
+        let allocator = &self.context.allocator;
+        let graphics_queue = self.context.graphics_queue.0;
+        let graphics_command_pool = self.context.graphics_queue.1;
+        
+        unsafe { device.queue_wait_idle(graphics_queue).map_err(|e| e.to_string())? };
+        
+        let mut temp_buffers: Vec<(vk::Buffer, vk_mem::Allocation)> = Vec::new();
 
+        let single_time_command_buffer = VulkanContext::begin_single_time_commands(device, graphics_command_pool)?;
+        let (vertices, vertex_buffer, vertex_buffer_memory, indices, index_buffer, index_buffer_memory) = {
+            let (
+                (vertex_buffer, vertex_buffer_memory, vertex_staging_buffer, vertex_staging_buffer_memory),
+                vertices,
+                (index_buffer, index_buffer_memory, index_staging_buffer, index_staging_buffer_memory),
+                indices
+            ) = Self::load_gltf(
+                device, single_time_command_buffer, allocator, path)?;
+            temp_buffers.push((vertex_staging_buffer, vertex_staging_buffer_memory));
+            temp_buffers.push((index_staging_buffer, index_staging_buffer_memory));
+            (vertices, vertex_buffer, vertex_buffer_memory, indices, index_buffer, index_buffer_memory)
+        };
+        VulkanContext::end_single_time_commands(device, graphics_queue, single_time_command_buffer)?;
 
+        temp_buffers.iter().for_each(|&(buffer, mut memory)| unsafe { allocator.destroy_buffer(buffer, &mut memory) });
+
+        if vertex_buffer.is_null() {
+            unsafe { self.context.allocator.free_memory(&mut self.vertex_buffer_memory);} }
+        else {
+            unsafe { self.context.allocator.destroy_buffer(self.vertex_buffer, &mut self.vertex_buffer_memory);} }
+
+        if index_buffer.is_null() {
+            unsafe { self.context.allocator.free_memory(&mut self.index_buffer_memory);} }
+        else {
+            unsafe { self.context.allocator.destroy_buffer(self.index_buffer, &mut self.index_buffer_memory);} }
+
+        self.vertices.clear();
+        self.indices.clear();
+
+        self.vertices = vertices;
+        self.indices = indices;
+        self.vertex_buffer = vertex_buffer;
+        self.vertex_buffer_memory = vertex_buffer_memory;
+        self.index_buffer = index_buffer;
+        self.index_buffer_memory = index_buffer_memory;
+
+        Ok(())
+    }
 
     fn create_buffer_from_slice<T>(device: &Device, command_buffer: vk::CommandBuffer, allocator: &vk_mem::Allocator, data: &[T], dst_usage_flags: vk::BufferUsageFlags) 
         -> Result<(vk::Buffer, vk_mem::Allocation, vk::Buffer, vk_mem::Allocation), String> where T: Copy + Debug
@@ -481,13 +521,16 @@ impl Renderer
         let graphics_command_buffer = VulkanContext::begin_single_time_commands(device, graphics_pool)?;
         Self::begin_render(device, graphics_command_buffer, image, view, swapchain_extent, depth_image, depth_image_view);
 
-        unsafe {
-            device.cmd_bind_pipeline(graphics_command_buffer, vk::PipelineBindPoint::GRAPHICS, graphics_pipeline);
-            device.cmd_bind_vertex_buffers(graphics_command_buffer, 0, &[self.vertex_buffer], &[0]);
-            device.cmd_bind_index_buffer(graphics_command_buffer, self.index_buffer, 0, vk::IndexType::UINT32);
-            device.cmd_bind_descriptor_sets(graphics_command_buffer, vk::PipelineBindPoint::GRAPHICS, graphics_pipeline_layout, 0, &[descriptor_set], &[]);
-            device.cmd_draw_indexed(graphics_command_buffer, self.indices.len() as u32, 1, self.indices[0], 0, 0);
-        };
+        if !self.vertices.is_empty() 
+        {
+            unsafe {
+                device.cmd_bind_pipeline(graphics_command_buffer, vk::PipelineBindPoint::GRAPHICS, graphics_pipeline);
+                device.cmd_bind_vertex_buffers(graphics_command_buffer, 0, &[self.vertex_buffer], &[0]);
+                device.cmd_bind_index_buffer(graphics_command_buffer, self.index_buffer, 0, vk::IndexType::UINT32);
+                device.cmd_bind_descriptor_sets(graphics_command_buffer, vk::PipelineBindPoint::GRAPHICS, graphics_pipeline_layout, 0, &[descriptor_set], &[]);
+                device.cmd_draw_indexed(graphics_command_buffer, self.indices.len() as u32, 1, self.indices[0], 0, 0);
+            };
+        }
 
         Self::end_render(device, graphics_command_buffer, image);
         unsafe { device.end_command_buffer(graphics_command_buffer) }.map_err(|e| e.to_string())?;

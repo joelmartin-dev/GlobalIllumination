@@ -87,10 +87,9 @@ impl Renderer
     Ok(result)
   }
 
-  pub fn load_gltf(device: &Device, command_buffer: vk::CommandBuffer, queue: vk::Queue, allocator: &vk_mem::Allocator, path: &Path) -> Result<((vk::Buffer, vk_mem::Allocation, vk::Buffer, vk_mem::Allocation), Vec<Vertex>, (vk::Buffer, vk_mem::Allocation, vk::Buffer, vk_mem::Allocation), Vec<u32>), String>
+  pub fn load_gltf(device: &Device, command_buffer: vk::CommandBuffer, allocator: &vk_mem::Allocator, path: &Path) -> Result<((vk::Buffer, vk_mem::Allocation, vk::Buffer, vk_mem::Allocation), Vec<Vertex>, (vk::Buffer, vk_mem::Allocation, vk::Buffer, vk_mem::Allocation), Vec<u32>), String>
   {
     let (base, bin) = GltfDocument::load(path)?;
-    unsafe { device.queue_wait_idle(queue).map_err(|e| e.to_string())? };
 
     let (loaded_vertices, loaded_indices, loaded_submeshes) = Self::load_geometry(&base, &bin, 0, 0)?;
 
