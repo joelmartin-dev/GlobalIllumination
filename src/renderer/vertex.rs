@@ -4,7 +4,7 @@ use memoffset::offset_of;
 
 // Attributes
 #[repr(C)]
-#[derive(PartialEq, Clone, Copy)]
+#[derive(Debug, PartialEq, Clone, Copy)]
 pub struct Vertex {
   pub pos:        glm::Vec3,
   pub tex_coord:  glm::Vec2,
@@ -13,7 +13,7 @@ pub struct Vertex {
   pub tang:       glm::Vec4
 }
 
-const TRIANGLE_VERTICES: [Vertex; 3] = [
+pub const TRIANGLE_VERTICES: [Vertex; 3] = [
   Vertex {
     pos: glm::Vec3::new(-1.0, -1.0, -0.0), tex_coord: glm::Vec2::new(0.0, 0.0), 
     colour: glm::Vec3::new(1.0, 0.0, 0.0), norm: glm::Vec3::new(0.0, 0.0, 0.0), 
@@ -31,7 +31,7 @@ const TRIANGLE_VERTICES: [Vertex; 3] = [
   }
 ];
 
-const TRIANGLE_INDICES: [u32; 3] = [ 0, 1, 2 ];
+pub const TRIANGLE_INDICES: [u32; 3] = [ 0, 1, 2 ];
 
 impl Vertex {
   // How the struct is passed

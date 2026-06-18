@@ -1,8 +1,8 @@
 use nalgebra_glm as glm;
 
-const WORLD_UP:       glm::Vec3 = glm::Vec3::new(0.0, 1.0, 0.0);
-const WORLD_RIGHT:    glm::Vec3 = glm::Vec3::new(1.0, 0.0, 0.0);
-const WORLD_FORWARD:  glm::Vec3 = glm::Vec3::new(0.0, 0.0, 1.0);
+pub const WORLD_UP:       glm::Vec3 = glm::Vec3::new(0.0, 1.0, 0.0);
+pub const WORLD_RIGHT:    glm::Vec3 = glm::Vec3::new(1.0, 0.0, 0.0);
+pub const WORLD_FORWARD:  glm::Vec3 = glm::Vec3::new(0.0, 0.0, 1.0);
 
 #[derive(Default)]
 pub struct Camera
@@ -58,8 +58,12 @@ impl Camera
   pub fn update(&mut self, velocity: glm::Vec3, look: glm::Quat, delta_fov: f32, shift_mod: bool)
   {
     let modifier: f32 = if shift_mod { self.shift_speed } else { 1.0 };
-    
-    self.pos += glm::quat_rotate_vec3(&self.rot, &velocity) * modifier * self.move_speed;
+    let rotated_velocity: glm::Vec3 = 
+      glm::quat_rotate_vec3(&self.rot, &WORLD_RIGHT) * velocity.x +
+      &WORLD_UP * velocity.y +
+      glm::quat_rotate_vec3(&self.rot, &WORLD_FORWARD) * velocity.z
+    ;
+    self.pos += rotated_velocity * modifier * self.move_speed;
     self.rot = (self.rot * look).normalize();
     self.fov += delta_fov * self.fov_speed;
   }

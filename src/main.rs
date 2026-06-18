@@ -1,6 +1,7 @@
 mod application;
 mod renderer;
 mod camera;
+mod gltf_loader;
 
 use winit::{event_loop::{ControlFlow, EventLoop}};
 

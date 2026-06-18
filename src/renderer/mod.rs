@@ -1,10 +1,10 @@
-use std::{ffi::c_void, fs, path::Path};
+use std::{ffi::c_void, fmt::Debug, fs, path::Path};
 
 use vk_mem::Alloc;
 use winit::window::Window;
 use ash::{Device, Instance, util::Align, vk};
 
-use crate::{camera::Camera, renderer::{buffer_structs::MVP, context::VulkanContext, slang::SlangCompiler, vertex::Vertex}};
+use crate::{camera::{Camera, WORLD_FORWARD, WORLD_RIGHT, WORLD_UP}, renderer::{buffer_structs::MVP, context::VulkanContext, slang::SlangCompiler, vertex::{TRIANGLE_INDICES, TRIANGLE_VERTICES, Vertex}}};
 use nalgebra_glm as glm;
 
 mod context;
@@ -13,6 +13,7 @@ mod gui;
 mod image;
 mod vertex;
 mod buffer_structs;
+mod gltf_parser;
 
 pub const FRAMES_IN_FLIGHT: usize = 2;
 
@@ -35,8 +36,21 @@ pub struct Renderer
   camera_buffers:           Vec<vk::Buffer>,
   camera_buffers_memory:    Vec<vk_mem::Allocation>,
   descriptor_set_layout:    vk::DescriptorSetLayout,
+  graphics_pipeline_layout: vk::PipelineLayout,
+  graphics_pipeline:        vk::Pipeline,
   descriptor_pool:          vk::DescriptorPool,
   descriptor_sets:          Vec<vk::DescriptorSet>,
+  vertices:                 Vec<Vertex>,
+  vertex_buffer:            vk::Buffer,
+  vertex_buffer_memory:     vk_mem::Allocation,
+  indices:                  Vec<u32>,
+  index_buffer:             vk::Buffer,
+  index_buffer_memory:      vk_mem::Allocation,
+  pub camera_velocity:      glm::Vec3,
+  pub camera_look:          glm::Vec3,
+  pub delta_fov:            f32,
+  pub shift_mod:            bool,
+  pub frame_delta:          f32,
   current_frame:            u32,
   timeline_value:           u64,
 }
@@ -49,6 +63,9 @@ impl Drop for Renderer
         unsafe { self.context.allocator.destroy_image(self.depth_image, &mut self.depth_image_memory) };
         unsafe { self.context.device.destroy_image_view(self.fallback_image_view, None);}
         unsafe { self.context.allocator.destroy_image(self.fallback_image, &mut self.fallback_image_memory) };
+
+        unsafe { self.context.allocator.destroy_buffer(self.vertex_buffer, &mut self.vertex_buffer_memory);}
+        unsafe { self.context.allocator.destroy_buffer(self.index_buffer, &mut self.index_buffer_memory);}
 
         for i in 0..FRAMES_IN_FLIGHT
         {
@@ -82,6 +99,21 @@ impl Renderer
             temp_buffers.push((staging_buffer, staging_buffer_memory));
             (image, image_memory, view)
         };
+        let (vertices, vertex_buffer, vertex_buffer_memory, indices, index_buffer, index_buffer_memory) = {
+            let (
+                (vertex_buffer, vertex_buffer_memory, vertex_staging_buffer, vertex_staging_buffer_memory),
+                vertices,
+                (index_buffer, index_buffer_memory, index_staging_buffer, index_staging_buffer_memory),
+                indices
+            ) = Self::load_gltf(
+                &context.device, single_time_command_buffer, context.graphics_queue.0, &context.allocator, 
+                &Path::new(
+                    "INSERT PATH HERE")
+            )?;
+            temp_buffers.push((vertex_staging_buffer, vertex_staging_buffer_memory));
+            temp_buffers.push((index_staging_buffer, index_staging_buffer_memory));
+            (vertices, vertex_buffer, vertex_buffer_memory, indices, index_buffer, index_buffer_memory)
+        };
         VulkanContext::end_single_time_commands(&context.device, context.graphics_queue.0, single_time_command_buffer)?;
 
         temp_buffers.iter().for_each(|&(buffer, mut memory)| unsafe { context.allocator.destroy_buffer(buffer, &mut memory) });
@@ -91,13 +123,16 @@ impl Renderer
             .anisotropy_enable(false).compare_enable(false).min_filter(vk::Filter::LINEAR).mag_filter(vk::Filter::LINEAR);
         let fallback_sampler = unsafe { context.device.create_sampler(&sampler_create_info, None) }.map_err(|_| "failed to create texture sampler")?;
 
+        let depth_format = VulkanContext::get_depth_format(&context.instance, context.physical_device);
         let (depth_image, depth_image_memory, depth_image_view) = Self::create_depth_resources(
             &context.instance, &context.allocator, &context.device, context.physical_device, context.swapchain_extent)?;
 
         let descriptor_set_layout = Self::create_descriptor_set_layouts(&context.device)?;
+        let (graphics_pipeline_layout, graphics_pipeline) = Self::create_pipeline(&context.instance, &context.device, context.physical_device, &Path::new("assets/shaders/shader.spv"), swapchain_format, depth_format, descriptor_set_layout)?;
+        
         let descriptor_pool = Self::create_descriptor_pools(&context.device)?;
 
-        let camera = Camera::new(context.swapchain_extent.width, context.swapchain_extent.height, glm::vec3(0.0, 0.0, -10.0), glm::zero());
+        let camera = Camera::new(context.swapchain_extent.width, context.swapchain_extent.height, glm::vec3(0.0, 0.0, 10.0), glm::zero());
         let (camera_buffers, camera_buffers_memory) = Self::create_camera_buffers(&context.allocator)?;
 
         let descriptor_sets = Self::create_descriptor_sets(&context.device, descriptor_pool, descriptor_set_layout, camera_buffers.as_slice(), fallback_image_view, fallback_sampler)?;
@@ -120,11 +155,65 @@ impl Renderer
             camera_buffers,
             camera_buffers_memory,
             descriptor_set_layout,
+            graphics_pipeline_layout,
+            graphics_pipeline,
             descriptor_pool,
             descriptor_sets,
+            vertices,
+            vertex_buffer,
+            vertex_buffer_memory,
+            indices,
+            index_buffer,
+            index_buffer_memory,
+            camera_velocity: glm::zero(),
+            camera_look: glm::zero(),
+            delta_fov: 0.0,
+            shift_mod: false,
+            frame_delta: 0.0,
             current_frame: 0,
             timeline_value: 0,
         })
+    }
+
+
+
+
+    fn create_buffer_from_slice<T>(device: &Device, command_buffer: vk::CommandBuffer, allocator: &vk_mem::Allocator, data: &[T], dst_usage_flags: vk::BufferUsageFlags) 
+        -> Result<(vk::Buffer, vk_mem::Allocation, vk::Buffer, vk_mem::Allocation), String> where T: Copy + Debug
+    {
+        let buffer_size = (size_of::<T>() * data.len()) as vk::DeviceSize;
+        let (staging_buffer, mut staging_buffer_memory) = Self::create_buffer(
+            allocator, buffer_size, vk::BufferUsageFlags::TRANSFER_SRC, 
+            vk::MemoryPropertyFlags::HOST_COHERENT | vk::MemoryPropertyFlags::HOST_VISIBLE,
+            vk_mem::AllocationCreateFlags::HOST_ACCESS_SEQUENTIAL_WRITE
+        )?;
+
+        unsafe {
+            let raw_data = match allocator.map_memory(&mut staging_buffer_memory)
+            {
+                Ok(v) => v,
+                Err(e) => { allocator.destroy_buffer(staging_buffer, &mut staging_buffer_memory); Err("failed to map buffer memory!")? }
+            };
+            let mut align = Align::new(raw_data as *mut c_void, size_of::<T>() as u64, buffer_size);
+            align.copy_from_slice(&data);
+            allocator.unmap_memory(&mut staging_buffer_memory);
+        }
+
+        let buffer_info = vk::BufferCreateInfo::default().usage(dst_usage_flags | vk::BufferUsageFlags::TRANSFER_DST).size(buffer_size).sharing_mode(vk::SharingMode::EXCLUSIVE);
+
+        let alloc_info = vk_mem::AllocationCreateInfo {
+            usage: vk_mem::MemoryUsage::AutoPreferDevice, ..Default::default()
+        };
+
+        let (buffer, buffer_memory) = match unsafe { allocator.create_buffer(&buffer_info, &alloc_info)}
+        {
+            Ok(v) => v,
+            Err(e) => { unsafe { allocator.destroy_buffer(staging_buffer, &mut staging_buffer_memory) };  Err(e.to_string())? }
+        };
+
+        unsafe { device.cmd_copy_buffer(command_buffer, staging_buffer, buffer, &[vk::BufferCopy::default().size(buffer_size)])};
+
+        Ok((buffer, buffer_memory, staging_buffer, staging_buffer_memory))
     }
 
     fn create_camera_buffers(
@@ -161,7 +250,7 @@ impl Renderer
             let texture_info = [vk::DescriptorImageInfo::default().image_layout(vk::ImageLayout::SHADER_READ_ONLY_OPTIMAL).image_view(fallback_image_view).sampler(fallback_sampler)];
             let writes = [
                 vk::WriteDescriptorSet::default().dst_set(sets[i]).dst_binding(0).dst_array_element(0).descriptor_count(1).descriptor_type(vk::DescriptorType::UNIFORM_BUFFER).buffer_info(&camera_info), 
-                vk::WriteDescriptorSet::default().dst_set(sets[i]).dst_binding(1).dst_array_element(0).descriptor_count(1).descriptor_type(vk::DescriptorType::SAMPLED_IMAGE).image_info(&texture_info)
+                vk::WriteDescriptorSet::default().dst_set(sets[i]).dst_binding(1).dst_array_element(0).descriptor_count(1).descriptor_type(vk::DescriptorType::COMBINED_IMAGE_SAMPLER).image_info(&texture_info)
             ];
 
             unsafe { device.update_descriptor_sets(&writes, &[]) };
@@ -175,7 +264,7 @@ impl Renderer
         let descriptor_count = FRAMES_IN_FLIGHT as u32;
         let pool_sizes = [
             vk::DescriptorPoolSize::default().ty(vk::DescriptorType::UNIFORM_BUFFER).descriptor_count(descriptor_count),
-            vk::DescriptorPoolSize::default().ty(vk::DescriptorType::SAMPLED_IMAGE).descriptor_count(descriptor_count)
+            vk::DescriptorPoolSize::default().ty(vk::DescriptorType::COMBINED_IMAGE_SAMPLER).descriptor_count(descriptor_count)
         ];
 
         let pool_info = vk::DescriptorPoolCreateInfo::default().flags(vk::DescriptorPoolCreateFlags::FREE_DESCRIPTOR_SET).max_sets(2).pool_sizes(&pool_sizes);
@@ -190,7 +279,7 @@ impl Renderer
                 .descriptor_type(vk::DescriptorType::UNIFORM_BUFFER).descriptor_count(1)
                 .stage_flags(vk::ShaderStageFlags::VERTEX),
             vk::DescriptorSetLayoutBinding::default().binding(1)
-                .descriptor_type(vk::DescriptorType::SAMPLED_IMAGE).descriptor_count(1)
+                .descriptor_type(vk::DescriptorType::COMBINED_IMAGE_SAMPLER).descriptor_count(1)
                 .stage_flags(vk::ShaderStageFlags::FRAGMENT)
         ];
 
@@ -233,7 +322,7 @@ impl Renderer
         color_attachment_format: vk::Format, depth_attachment_format: vk::Format, descriptor_set_layout: vk::DescriptorSetLayout
     ) -> Result<(vk::PipelineLayout, vk::Pipeline), String>
     {
-        let shader_code: Vec<u32> = fs::read(shader).map_err(|_| "failed to read from shader file")?.iter().map(|&f| f as u32).collect();
+        let shader_code: Vec<u32> = fs::read(shader).map_err(|_| "failed to read from shader file")?.chunks_exact(size_of::<u32>()).map(|chunk| u32::from_le_bytes(chunk.try_into().unwrap())).collect();
         let module = Self::create_shader_module(device, shader_code.as_slice())?;
         let vert_name = c"vertMain";
         let frag_name = c"fragMain";
@@ -362,6 +451,9 @@ impl Renderer
         let presentation_queue = self.context.presentation_queue.0;
         let presentation_pool = self.context.presentation_queue.1;
         let fence = self.in_flight_fences[self.current_frame as usize];
+        let graphics_pipeline = self.graphics_pipeline;
+        let graphics_pipeline_layout = self.graphics_pipeline_layout;
+        let descriptor_set = self.descriptor_sets[self.current_frame as usize];
         
         let semaphore = [self.timeline_semaphore];
         let graphics_wait_value = [self.timeline_value]; self.timeline_value += 1; let graphics_signal_value = [self.timeline_value];
@@ -374,6 +466,14 @@ impl Renderer
         let depth_image = self.depth_image;
         let depth_image_view = self.depth_image_view;
 
+        let camera_look_quat = 
+            glm::quat_angle_axis(self.camera_look.y * self.frame_delta, &WORLD_UP) * 
+            glm::quat_angle_axis(self.camera_look.x * self.frame_delta, &WORLD_RIGHT) * 
+            glm::quat_angle_axis(self.camera_look.z * self.frame_delta, &WORLD_FORWARD).normalize();
+        self.camera.update(
+            self.camera_velocity * self.frame_delta, camera_look_quat,
+            self.delta_fov * self.frame_delta, self.shift_mod
+        );
         Self::update_camera_buffer(device, allocator, &self.camera, self.camera_buffers_memory[self.current_frame as usize])?;
 
         unsafe { device.wait_for_fences(&[fence], true, u64::MAX) }.map_err(|e| e.to_string())?;
@@ -381,7 +481,13 @@ impl Renderer
         let graphics_command_buffer = VulkanContext::begin_single_time_commands(device, graphics_pool)?;
         Self::begin_render(device, graphics_command_buffer, image, view, swapchain_extent, depth_image, depth_image_view);
 
-
+        unsafe {
+            device.cmd_bind_pipeline(graphics_command_buffer, vk::PipelineBindPoint::GRAPHICS, graphics_pipeline);
+            device.cmd_bind_vertex_buffers(graphics_command_buffer, 0, &[self.vertex_buffer], &[0]);
+            device.cmd_bind_index_buffer(graphics_command_buffer, self.index_buffer, 0, vk::IndexType::UINT32);
+            device.cmd_bind_descriptor_sets(graphics_command_buffer, vk::PipelineBindPoint::GRAPHICS, graphics_pipeline_layout, 0, &[descriptor_set], &[]);
+            device.cmd_draw_indexed(graphics_command_buffer, self.indices.len() as u32, 1, self.indices[0], 0, 0);
+        };
 
         Self::end_render(device, graphics_command_buffer, image);
         unsafe { device.end_command_buffer(graphics_command_buffer) }.map_err(|e| e.to_string())?;

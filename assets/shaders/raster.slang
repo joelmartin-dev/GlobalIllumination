@@ -36,8 +36,9 @@ struct PushConstant {
 float4 fragMain(VSOutput vertIn) : SV_TARGET {
     float4 textureColour = fallback.Sample(vertIn.fragTexCoord);
     // return textureColour * float4(vertIn.fragColor, 1.0f);
-    return float4(vertIn.fragColor, 1.0f);
-    //return float4(vertIn.fragTangent);
+    // return textureColour;
+    // return float4(vertIn.fragNormal, 1.0);
+    return float4(vertIn.fragTexCoord, 0.0, 1.0);
 }
 
 [shader("compute")]

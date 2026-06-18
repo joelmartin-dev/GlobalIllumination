@@ -1,4 +1,4 @@
-use std::{any::type_name, fs, path::PathBuf, str::FromStr};
+use std::{any::type_name, fs, path::Path, str::FromStr};
 
 use iri_string::{percent_encode::PercentEncoded, spec::IriSpec, types::IriReferenceStr};
 use serde::{Deserialize, Deserializer, Serializer, de::Error};
@@ -7,7 +7,7 @@ use base64::{engine::general_purpose::STANDARD, Engine as _};
 use crate::gltf_loader::{GltfDocument, Validatable, enums::{MeshPrimitiveMode, Undefinable}};
 
 impl GltfDocument {
-  pub fn load(path: &PathBuf) -> Result<(Self, Vec<Vec<u8>>), String> {
+  pub fn load(path: &Path) -> Result<(Self, Vec<Vec<u8>>), String> {
     let parsed: Result<GltfDocument, serde_json::Error> = serde_json::from_str(match &fs::read_to_string(path) { Ok(v) => v, Err(e) => Err(e.to_string())?});
 
     if let Ok(loaded) = parsed {
