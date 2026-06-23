@@ -1,15 +1,16 @@
 use std::{ffi::c_void, fmt::Debug, fs, path::Path, ptr::null};
 
+use imgui::Condition;
 use vk_mem::Alloc;
 use winit::window::Window;
 use ash::{Device, Instance, util::Align, vk::{self, Handle}};
 
-use crate::{camera::{Camera, WORLD_FORWARD, WORLD_RIGHT, WORLD_UP}, renderer::{buffer_structs::MVP, context::VulkanContext, slang::SlangCompiler, vertex::{TRIANGLE_INDICES, TRIANGLE_VERTICES, Vertex}}};
+use crate::{camera::{Camera, WORLD_FORWARD, WORLD_RIGHT, WORLD_UP}, renderer::{buffer_structs::MVP, context::VulkanContext, gui::GuiContext, slang::SlangCompiler, vertex::{TRIANGLE_INDICES, TRIANGLE_VERTICES, Vertex}}};
 use nalgebra_glm as glm;
 
 mod context;
 mod slang;
-mod gui;
+pub mod gui;
 mod image;
 mod vertex;
 mod buffer_structs;
@@ -19,40 +20,41 @@ pub const FRAMES_IN_FLIGHT: usize = 2;
 
 pub struct Renderer
 {
-  context:                  VulkanContext,
-  slang_compiler:           SlangCompiler,
-  timeline_semaphore:       vk::Semaphore,
-  in_flight_fences:         [vk::Fence; FRAMES_IN_FLIGHT],
-  swapchain_images:         Vec<vk::Image>,
-  swapchain_image_views:    Vec<vk::ImageView>,
-  depth_image:              vk::Image,
-  depth_image_memory:       vk_mem::Allocation,
-  depth_image_view:         vk::ImageView,
-  fallback_image:           vk::Image,
-  fallback_image_memory:    vk_mem::Allocation,
-  fallback_image_view:      vk::ImageView,
-  fallback_sampler:         vk::Sampler,
-  camera:                   Camera,
-  camera_buffers:           Vec<vk::Buffer>,
-  camera_buffers_memory:    Vec<vk_mem::Allocation>,
-  descriptor_set_layout:    vk::DescriptorSetLayout,
-  graphics_pipeline_layout: vk::PipelineLayout,
-  graphics_pipeline:        vk::Pipeline,
-  descriptor_pool:          vk::DescriptorPool,
-  descriptor_sets:          Vec<vk::DescriptorSet>,
-  vertices:                 Vec<Vertex>,
-  vertex_buffer:            vk::Buffer,
-  vertex_buffer_memory:     vk_mem::Allocation,
-  indices:                  Vec<u32>,
-  index_buffer:             vk::Buffer,
-  index_buffer_memory:      vk_mem::Allocation,
-  pub camera_velocity:      glm::Vec3,
-  pub camera_look:          glm::Vec3,
-  pub delta_fov:            f32,
-  pub shift_mod:            bool,
-  pub frame_delta:          f32,
-  current_frame:            u32,
-  timeline_value:           u64,
+    context:                    VulkanContext,
+    pub gui:                        gui::GuiContext,
+    slang_compiler:             SlangCompiler,
+    timeline_semaphore:         vk::Semaphore,
+    in_flight_fences:           [vk::Fence; FRAMES_IN_FLIGHT],
+    swapchain_images:           Vec<vk::Image>,
+    swapchain_image_views:      Vec<vk::ImageView>,
+    depth_image:                vk::Image,
+    depth_image_memory:         vk_mem::Allocation,
+    depth_image_view:           vk::ImageView,
+    fallback_image:             vk::Image,
+    fallback_image_memory:      vk_mem::Allocation,
+    fallback_image_view:        vk::ImageView,
+    fallback_sampler:           vk::Sampler,
+    pub camera:                     Camera,
+    camera_buffers:             Vec<vk::Buffer>,
+    camera_buffers_memory:      Vec<vk_mem::Allocation>,
+    descriptor_set_layout:      vk::DescriptorSetLayout,
+    graphics_pipeline_layout:   vk::PipelineLayout,
+    graphics_pipeline:          vk::Pipeline,
+    descriptor_pool:            vk::DescriptorPool,
+    descriptor_sets:            Vec<vk::DescriptorSet>,
+    vertices:                   Vec<Vertex>,
+    vertex_buffer:              vk::Buffer,
+    vertex_buffer_memory:       vk_mem::Allocation,
+    indices:                    Vec<u32>,
+    index_buffer:               vk::Buffer,
+    index_buffer_memory:        vk_mem::Allocation,
+    pub camera_velocity:        glm::Vec3,
+    pub camera_look:            glm::Vec3,
+    pub delta_fov:              f32,
+    pub shift_mod:              bool,
+    pub frame_delta:            f32,
+    current_frame:              u32,
+    timeline_value:             u64,
 }
 
 impl Drop for Renderer
@@ -79,6 +81,8 @@ impl Renderer
     pub fn new(window: &Window) -> Result<Self, String>
     {
         let context = VulkanContext::new(window);
+
+        let gui = GuiContext::new(window, &context)?;
 
         let slang_compiler = SlangCompiler::new();
 
@@ -131,6 +135,7 @@ impl Renderer
 
         Ok(Self {
             context,
+            gui,
             slang_compiler,
             timeline_semaphore,
             in_flight_fences,
@@ -498,6 +503,10 @@ impl Renderer
         let semaphore = [self.timeline_semaphore];
         let graphics_wait_value = [self.timeline_value]; self.timeline_value += 1; let graphics_signal_value = [self.timeline_value];
 
+        let mut gui = &mut self.gui;
+        let mut imgui = &mut gui.imgui;
+        let draw_data = imgui.render();
+
         let (image_index, _) = unsafe { swapchain.acquire_next_image(swapchain_khr, u64::MAX, vk::Semaphore::null(), fence)}.map_err(|e| e.to_string())?;
 
         let image = self.swapchain_images[image_index as usize];
@@ -531,6 +540,8 @@ impl Renderer
                 device.cmd_draw_indexed(graphics_command_buffer, self.indices.len() as u32, 1, self.indices[0], 0, 0);
             };
         }
+
+        gui.renderer.cmd_draw(graphics_command_buffer, draw_data).map_err(|e| e.to_string())?;
 
         Self::end_render(device, graphics_command_buffer, image);
         unsafe { device.end_command_buffer(graphics_command_buffer) }.map_err(|e| e.to_string())?;

@@ -1,11 +1,11 @@
 use std::time::Instant;
 
-use winit::{application::ApplicationHandler, event::{ElementState, WindowEvent}, event_loop::ActiveEventLoop, keyboard::{Key, KeyCode, ModifiersState, NamedKey, PhysicalKey}, window::{Window, WindowId}};
+use winit::{application::ApplicationHandler, event::{ElementState, Event, WindowEvent}, event_loop::ActiveEventLoop, keyboard::{Key, KeyCode, ModifiersState, NamedKey, PhysicalKey}, window::{Window, WindowId}};
 
 #[cfg(target_os = "windows")]
 use winit::platform::windows::WindowAttributesExtWindows;
 
-use crate::renderer::Renderer;
+use crate::renderer::{Renderer, gui::GuiContext};
 
 
 #[derive(Default)]
@@ -31,12 +31,17 @@ impl ApplicationHandler for App {
       let window = self.window.as_ref().unwrap();
       let modifiers = self.modifiers_state;
 
+      let gui = &mut renderer.gui;
+      let raw_event: Event<WindowEvent> = Event::WindowEvent { window_id, event: event.clone()};
+      gui.platform.handle_event(gui.imgui.io_mut(), window, &raw_event);
+
       match event {
         WindowEvent::CloseRequested => {
           event_loop.exit();
         },
         WindowEvent::RedrawRequested => {
           let frame_start = Instant::now();
+          gui.setup_imgui_frame(&mut renderer.camera, window);
           match renderer.present_frame() {
             Err(e) => println!("{}", e),
             _ => ()
@@ -93,6 +98,7 @@ impl ApplicationHandler for App {
             Err(e) => println!("{}", e),
             _ => ()
           };
+          window.request_redraw();
         },
         _ => ()
       }

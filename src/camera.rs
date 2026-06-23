@@ -64,7 +64,7 @@ impl Camera
       glm::quat_rotate_vec3(&self.rot, &WORLD_FORWARD) * velocity.z
     ;
     self.pos += rotated_velocity * modifier * self.move_speed;
-    self.rot = (self.rot * look).normalize();
-    self.fov += delta_fov * self.fov_speed;
+    self.rot = (look * self.rot * modifier * self.rot_speed).normalize();
+    self.fov += delta_fov * modifier * self.fov_speed;
   }
 }
